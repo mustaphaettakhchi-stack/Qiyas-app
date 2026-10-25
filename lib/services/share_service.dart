@@ -15,10 +15,12 @@ class ShareService {
     final dir = await getTemporaryDirectory();
     final f = File('${dir.path}/$fileName');
     await f.writeAsBytes(bytes, flush: true);
-    final result = await Share.shareXFiles(
-      [XFile(f.path, mimeType: 'application/pdf')],
-      text: message,
-      subject: fileName,
+    final result = await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(f.path, mimeType: 'application/pdf')],
+        text: message,
+        subject: fileName,
+      ),
     );
     // « unavailable » = la plateforme ne sait pas dire si l'envoi a eu lieu : on le considère fait.
     return result.status != ShareResultStatus.dismissed;

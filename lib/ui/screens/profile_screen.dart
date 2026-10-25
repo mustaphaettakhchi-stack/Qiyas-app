@@ -93,7 +93,9 @@ class ProfileScreen extends StatelessWidget {
           OutlinedButton(
             onPressed: () async {
               final path = await s.store.exportFile(s.data);
-              await Share.shareXFiles([XFile(path, mimeType: 'application/json')], subject: 'Export Qiyas');
+              await SharePlus.instance.share(
+                ShareParams(files: [XFile(path, mimeType: 'application/json')], subject: 'Export Qiyas'),
+              );
             },
             child: const Text('Exporter mes données'),
           ),

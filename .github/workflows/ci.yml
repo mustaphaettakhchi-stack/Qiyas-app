@@ -37,12 +37,17 @@ jobs:
           flutter create --platforms=android --org ma.qiyas --project-name qiyas . > create.txt 2>&1
           rm -f test/widget_test.dart
           flutter build apk --debug > build.txt 2>&1; B=$?
+          K=$(grep -c "apply Kotlin Gradle Plugin" build.txt)
           {
             echo "# Rapport CI"
             echo "commit: $GITHUB_SHA"
             echo "analyze_exit: $A"
             echo "test_exit: $T"
             echo "build_exit: $B"
+            echo "kgp_warning_lines: $K"
+            echo
+            echo "## Versions des dépendances"
+            flutter pub deps --style=compact 2>/dev/null | grep -E "^- (share_plus|printing|pdf|image_picker|url_launcher|path_provider|provider|uuid) " || true
             echo
             echo "## flutter --version"
             flutter --version

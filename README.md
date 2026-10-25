@@ -6,7 +6,7 @@ Ce dépôt implémente les 10 écrans du cahier des charges du MVP, en version *
 
 ## Démarrer
 
-Prérequis : Flutter 3.27 ou plus récent (Dart 3.6+), Android Studio ou Xcode.
+Prérequis : Flutter 3.41.6 ou plus récent (Dart 3.11+), Android Studio ou Xcode.
 
 ```bash
 # 1. Générer les dossiers natifs (non versionnés)
