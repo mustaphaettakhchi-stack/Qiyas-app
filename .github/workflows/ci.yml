@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verifier-et-construire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dépendances
+        run: flutter pub get
+
+      - name: Analyse, tests et APK
+        run: |
+          set +e
+          flutter analyze --no-fatal-infos > analyze.txt 2>&1; A=$?
+          flutter test > test.txt 2>&1; T=$?
+          # Les dossiers android/ et ios/ ne sont pas versionnés : on les génère ici.
+          flutter create --platforms=android --org ma.qiyas --project-name qiyas . > create.txt 2>&1
+          rm -f test/widget_test.dart
+          flutter build apk --debug > build.txt 2>&1; B=$?
+          {
+            echo "# Rapport CI"
+            echo "commit: $GITHUB_SHA"
+            echo "analyze_exit: $A"
+            echo "test_exit: $T"
+            echo "build_exit: $B"
+            echo
+            echo "## flutter --version"
+            flutter --version
+            echo
+            echo "## flutter analyze"
+            cat analyze.txt
+            echo
+            echo "## flutter test"
+            tail -n 120 test.txt
+            echo
+            echo "## flutter build apk (fin du journal)"
+            tail -n 120 build.txt
+          } > ci-report.md
+          echo "A=$A" >> "$GITHUB_ENV"
+          echo "T=$T" >> "$GITHUB_ENV"
+          echo "B=$B" >> "$GITHUB_ENV"
+
+      - name: APK de test pour les artisans pilotes
+        if: env.B == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qiyas-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
+
+      - name: Publier le rapport sur la branche ci-results
+        if: github.event_name != 'pull_request'
+        run: |
+          cp ci-report.md /tmp/ci-report.md
+          git config user.name "qiyas-ci"
+          git config user.email "qiyas-ci@users.noreply.github.com"
+          git checkout --orphan ci-results
+          git rm -rf --cached . > /dev/null
+          cp /tmp/ci-report.md ci-report.md
+          git add -f ci-report.md
+          git commit -m "Rapport CI ${GITHUB_SHA}"
+          git push -f origin ci-results
+
+      - name: Échouer si une étape a échoué
+        run: test "$A" = "0" && test "$T" = "0" && test "$B" = "0"
