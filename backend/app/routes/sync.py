@@ -360,6 +360,8 @@ class PullOut(BaseModel):
     records: list[RecordOut]
     cursor: int
     has_more: bool
+    # Identifiant de la dernière restauration de sauvegarde (null : jamais restauré).
+    epoch: uuid.UUID | None = None
 
 
 # ---------- outils ----------
@@ -801,6 +803,17 @@ def push(
     return PushOut(results=results)
 
 
+class EpochOut(BaseModel):
+    epoch: uuid.UUID | None
+
+
+@router.get("/epoch", response_model=EpochOut)
+def sync_epoch(ctx: Context = Depends(require_staff), db: Session = Depends(get_db)) -> EpochOut:
+    """Consulté par le téléphone AVANT tout envoi : une époque différente de la sienne signifie
+    que le serveur a été restauré depuis une sauvegarde (RESTORE.md)."""
+    return EpochOut(epoch=db.scalar(select(Organization.sync_epoch).where(Organization.id == ctx.organization_id)))
+
+
 @router.get("/pull", response_model=PullOut)
 def pull(
     cursor: Annotated[int, Query(ge=0)] = 0,
@@ -818,4 +831,5 @@ def pull(
     has_more = len(records) > PAGE_SIZE
     records = records[:PAGE_SIZE]
     next_cursor = records[-1].sync_seq if records else cursor
-    return PullOut(records=records, cursor=next_cursor, has_more=has_more)
+    epoch = db.scalar(select(Organization.sync_epoch).where(Organization.id == ctx.organization_id))
+    return PullOut(records=records, cursor=next_cursor, has_more=has_more, epoch=epoch)

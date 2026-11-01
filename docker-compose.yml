@@ -1,6 +1,11 @@
 # Pile serveur LAMAALAM — voir docs/ARCHITECTURE.md §2.
 # Usage : cp .env.example .env ; éditer .env ; docker compose up -d
 # Aucun service payant ; l'hébergement reste à valider (décision D-06).
+# Exploitation : DEPLOYMENT.md, BACKUP.md, RESTORE.md (scripts dans deploy/).
+
+# Nom fixe : les volumes s'appellent lamaalam_db-data, lamaalam_files-data… quel que soit
+# le dossier d'installation (les scripts de sauvegarde et de restauration en dépendent).
+name: lamaalam
 
 services:
   db:
@@ -21,7 +26,11 @@ services:
 
   migrate:
     build: ./backend
+    image: lamaalam-api:local
     command: ["alembic", "upgrade", "head"]
+    # Mêmes réglages que l'API, mais avec le rôle propriétaire de la base : sert aussi aux
+    # commandes d'exploitation (deploy/restore.sh).
+    env_file: ${LAMAALAM_ENV_FILE:-.env}
     environment:
       LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam_owner:${LAMAALAM_OWNER_DB_PASSWORD}@db:5432/lamaalam
     depends_on:
@@ -30,14 +39,19 @@ services:
     restart: "no"
 
   api:
-    build: ./backend
+    image: lamaalam-api:local
     restart: unless-stopped
-    env_file: .env
+    # .env par défaut ; LAMAALAM_ENV_FILE permet un autre fichier (exercice de restauration).
+    env_file: ${LAMAALAM_ENV_FILE:-.env}
     environment:
       LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam_app:${LAMAALAM_APP_DB_PASSWORD}@db:5432/lamaalam
     depends_on:
       migrate:
         condition: service_completed_successfully
+    volumes:
+      # Photos partagées et PDF de devis (lot 1.8) : le reste du système de fichiers
+      # du conteneur est en lecture seule.
+      - files-data:/var/lib/lamaalam/files
     read_only: true
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
@@ -55,4 +69,5 @@ services:
 
 volumes:
   db-data:
+  files-data:
   caddy-data:

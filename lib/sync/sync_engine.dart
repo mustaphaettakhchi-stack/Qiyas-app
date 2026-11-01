@@ -78,8 +78,17 @@ class SyncEngine extends ChangeNotifier {
     notifyListeners();
     try {
       if (!_checkAccount()) return;
+      if (!await _checkEpoch()) return;
       await _push();
+      final resync = _data.fullResync;
+      if (resync) _seen = {};
       await _pull();
+      if (resync) {
+        resent = _resendUnknown();
+        _data.fullResync = false;
+        _seen = null;
+        if (resent > 0) await _push();
+      }
       await _publishPdfs();
       _data.lastSyncAt = DateTime.now();
       phase = SyncPhase.idle;
@@ -87,6 +96,9 @@ class SyncEngine extends ChangeNotifier {
     } on ApiException catch (e) {
       phase = e.isNetwork ? SyncPhase.offline : SyncPhase.error;
       lastError = e.message;
+      // Re-téléchargement interrompu : il reprendra depuis le début (liste des fiches vues incomplète).
+      if (_data.fullResync) _data.syncCursor = 0;
+      _seen = null;
     } finally {
       await state.afterSync();
       notifyListeners();
@@ -108,6 +120,95 @@ class SyncEngine extends ChangeNotifier {
       return false;
     }
     return true;
+  }
+
+  // ---------- restauration du serveur ----------
+
+  static const restoreMessage = 'Le serveur a été restauré depuis une sauvegarde : synchronisation suspendue. '
+      'Ouvrez l\'écran de synchronisation avant de continuer.';
+
+  /// Avant tout envoi : le serveur a-t-il été restauré depuis une sauvegarde ?
+  /// Si oui, ce téléphone peut détenir des fiches que le serveur a perdues (créées ou modifiées
+  /// entre la sauvegarde et l'incident) : rien n'est envoyé ni reçu tant qu'un utilisateur n'a
+  /// pas pris connaissance de la situation (RESTORE.md).
+  Future<bool> _checkEpoch() async {
+    if (_data.restoredEpoch != null) {
+      phase = SyncPhase.error;
+      lastError = restoreMessage;
+      return false;
+    }
+    final r = Map<String, dynamic>.from(await _api.get('/sync/epoch') as Map);
+    final server = r['epoch'] as String?;
+    if (server == _data.syncEpoch) return true;
+    final neverSynced = _data.syncCursor == 0 && _data.lastSyncAt == null;
+    if (server == null || neverSynced) {
+      _data.syncEpoch = server;
+      return true;
+    }
+    _data.restoredEpoch = server;
+    phase = SyncPhase.error;
+    lastError = restoreMessage;
+    return false;
+  }
+
+  /// Reprise après restauration, décidée par l'utilisateur : tout est retéléchargé depuis le
+  /// serveur (curseur remis à zéro). Les modifications non encore envoyées restent à envoyer et
+  /// passeront par la détection de conflits habituelle.
+  Future<void> resumeAfterRestore() async {
+    final epoch = _data.restoredEpoch;
+    if (epoch == null) return;
+    _data
+      ..syncEpoch = epoch
+      ..restoredEpoch = null
+      ..syncCursor = 0
+      ..fullResync = true;
+    await state.afterSync();
+    await syncNow();
+  }
+
+  /// Fiches renvoyées au serveur à la dernière reprise après restauration (affiché à l'utilisateur).
+  int resent = 0;
+  Set<String>? _seen;
+
+  /// Après le re-téléchargement complet : les fiches que ce téléphone croyait synchronisées mais
+  /// que le serveur restauré ne connaît plus (créées entre la sauvegarde et l'incident) sont
+  /// renvoyées comme nouvelles. Rien n'est jamais supprimé du téléphone.
+  int _resendUnknown() {
+    final seen = _seen ?? const <String>{};
+    var n = 0;
+    void check(String entity, Syncable x, String id) {
+      if (x.serverVersion == null || x.deleted || seen.contains('$entity/$id')) return;
+      x
+        ..serverVersion = null
+        ..markEdited();
+      n++;
+    }
+
+    if (session.user?.isAdmin ?? false) {
+      for (final x in _data.suppliers) {
+        check('suppliers', x, x.id);
+      }
+      for (final x in _data.materials) {
+        check('materials', x, x.id);
+      }
+      for (final x in _data.workItems) {
+        check('work_items', x, x.id);
+      }
+    }
+    for (final c in _data.clients) {
+      check('clients', c, c.id);
+    }
+    for (final p in _data.projects) {
+      check('projects', p, p.id);
+      if (p.deleted) continue;
+      for (final r in p.rooms) {
+        check('rooms', r, r.id);
+      }
+      for (final q in p.quotes) {
+        if (!q.legacy) check('quotes', q, q.id);
+      }
+    }
+    return n;
   }
 
   // ---------- envoi ----------
@@ -295,6 +396,16 @@ class SyncEngine extends ChangeNotifier {
     final id = record['id'] as String;
     final deleted = record['deleted'] == true;
     final local = _find(entity, id);
+    _seen?.add('$entity/$id');
+
+    // Version du serveur plus ANCIENNE que celle du téléphone : seule une restauration de
+    // sauvegarde produit ce cas. Le travail du téléphone n'est jamais écrasé : conflit à arbitrer.
+    final known = local?.serverVersion;
+    if (local != null && known != null && (record['version'] as int) < known && !local.deleted) {
+      _addConflict(entity, id, record,
+          'Le serveur a été restauré avec une version plus ancienne de cette fiche. Gardez la vôtre pour la lui renvoyer.');
+      return;
+    }
 
     if (entity == 'rooms') {
       final t = _data.roomTombstones.where((x) => x.id == id).firstOrNull;

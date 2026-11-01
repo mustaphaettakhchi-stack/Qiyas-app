@@ -85,6 +85,21 @@ jobs:
           PYTHON: python
         run: tool/integration_test.sh
 
+  exploitation:
+    # Critère de sortie du lot 1.9 : restauration complète sur machine vierge, chronométrée.
+    # La machine de GitHub est neuve à chaque exécution (aucune image ni aucun cache Docker).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Outil de chiffrement des sauvegardes (age)
+        run: sudo apt-get update -q && sudo apt-get install -y -q age
+      - name: Installation, sauvegarde, destruction, restauration, vérification
+        run: |
+          set -o pipefail
+          tool/restore_drill.sh 2>&1 | tee restore-drill.log
+          grep -E "EXERCICE|terminée en" restore-drill.log >> "$GITHUB_STEP_SUMMARY"
+
   verifier-et-construire:
     runs-on: ubuntu-latest
     steps:

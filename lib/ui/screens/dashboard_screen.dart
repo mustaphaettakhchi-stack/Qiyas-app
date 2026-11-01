@@ -33,6 +33,7 @@ const kActivityLabels = {
   'library.import': 'Bibliothèque importée',
   'message.post': 'Message',
   'file.share': 'Photo partagée avec le client',
+  'backup.restore': 'Sauvegarde restaurée',
 };
 
 /// Accueil : indicateurs, raccourcis, actions à mener, derniers projets, dernières opérations.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/format.dart';
 import '../../core/labels.dart';
@@ -27,7 +28,14 @@ class SyncScreen extends StatelessWidget {
         Text(last == null ? 'Jamais synchronisé.' : 'Dernière synchronisation : ${frDate(last)} à '
             '${last.hour.toString().padLeft(2, '0')}:${last.minute.toString().padLeft(2, '0')}'),
         Text('${s.pendingCount} fiche(s) en attente d\'envoi.', style: t.bodySmall),
-        if (engine.lastError != null) ...[
+        if (s.data.restoredEpoch != null) ...[
+          const SizedBox(height: 8),
+          const _RestoredServer(),
+        ] else if (engine.resent > 0) ...[
+          const SizedBox(height: 8),
+          AlertBox('Reprise après restauration : ${engine.resent} fiche(s) que le serveur ne connaissait plus lui ont été renvoyées.'),
+        ],
+        if (engine.lastError != null && s.data.restoredEpoch == null) ...[
           const SizedBox(height: 8),
           AlertBox(engine.lastError!, kind: engine.phase == SyncPhase.offline ? AlertKind.warning : AlertKind.error),
         ],
@@ -187,6 +195,44 @@ class _ConflictCard extends StatelessWidget {
           ]),
         ]),
       ),
+    );
+  }
+}
+
+/// Le serveur a été restauré depuis une sauvegarde : explication et reprise décidée par l'utilisateur.
+class _RestoredServer extends StatelessWidget {
+  const _RestoredServer();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.read<AppState>();
+    final engine = context.read<SyncEngine>();
+    return AlertBox(
+      'Le serveur a été restauré depuis une sauvegarde. Ce téléphone contient peut-être des fiches '
+      'créées ou modifiées après cette sauvegarde : la synchronisation est suspendue pour ne rien perdre.\n\n'
+      'À la reprise, tout est retéléchargé ; les fiches que le serveur ne connaît plus lui sont renvoyées, '
+      'et celles dont le serveur a une version plus ancienne apparaissent en conflit : gardez la vôtre. '
+      'Rien n\'est supprimé de ce téléphone. Par précaution, exportez d\'abord vos données.',
+      kind: AlertKind.warning,
+      action: Wrap(spacing: 8, runSpacing: 8, children: [
+        OutlinedButton(
+          onPressed: () async {
+            final path = await s.store.exportFile(s.data);
+            await SharePlus.instance.share(ShareParams(files: [XFile(path, mimeType: 'application/json')], subject: 'Export LAMAALAM'));
+          },
+          child: const Text('Exporter mes données'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            if (await confirm(context, 'Reprendre la synchronisation ?',
+                'Tout sera retéléchargé depuis le serveur restauré. Vos fiches absentes du serveur lui seront renvoyées.',
+                ok: 'Reprendre')) {
+              await engine.resumeAfterRestore();
+            }
+          },
+          child: const Text('Reprendre la synchronisation'),
+        ),
+      ]),
     );
   }
 }

@@ -1274,6 +1274,9 @@ class AppData {
     this.syncCursor = 0,
     this.syncAccount,
     this.lastSyncAt,
+    this.syncEpoch,
+    this.restoredEpoch,
+    this.fullResync = false,
   })  : workItems = workItems ?? [],
         materials = materials ?? [],
         suppliers = suppliers ?? [],
@@ -1302,6 +1305,16 @@ class AppData {
   String? syncAccount;
   DateTime? lastSyncAt;
 
+  /// Époque du serveur connue de ce téléphone (change à chaque restauration de sauvegarde).
+  String? syncEpoch;
+
+  /// Non null : le serveur a été restauré depuis une sauvegarde (nouvelle époque) et la
+  /// synchronisation est suspendue jusqu'à ce qu'un utilisateur en prenne connaissance.
+  String? restoredEpoch;
+
+  /// Re-téléchargement complet en cours après une restauration du serveur.
+  bool fullResync;
+
   Map<String, dynamic> toJson() => {
         'schema': 4,
         'company': company.toJson(),
@@ -1317,6 +1330,9 @@ class AppData {
         'sync_cursor': syncCursor,
         'sync_account': syncAccount,
         'last_sync': lastSyncAt?.toIso8601String(),
+        'sync_epoch': syncEpoch,
+        'restored_epoch': restoredEpoch,
+        'full_resync': fullResync,
       };
 
   factory AppData.fromJson(Map<String, dynamic> j) => AppData._fromJson(j).._defaultLineVat();
@@ -1358,5 +1374,8 @@ class AppData {
         syncCursor: _i(j['sync_cursor']),
         syncAccount: j['sync_account'] as String?,
         lastSyncAt: j['last_sync'] == null ? null : DateTime.tryParse(_s(j['last_sync'])),
+        syncEpoch: j['sync_epoch'] as String?,
+        restoredEpoch: j['restored_epoch'] as String?,
+        fullResync: j['full_resync'] == true,
       );
 }

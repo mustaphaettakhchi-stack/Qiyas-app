@@ -31,7 +31,7 @@ PROSPECT = {"prospect", "visit_planned", "estimating"}
 ACTIVITY_ACTIONS = (
     "project.create", "project.delete", "client.create", "client.delete", "metre.validate",
     "estimate.create", "estimate.validate", "estimate.send", "estimate.accept", "estimate.refuse",
-    "invitation.accept", "library.import", "message.post", "file.share",
+    "invitation.accept", "library.import", "message.post", "file.share", "backup.restore",
 )
 
 
