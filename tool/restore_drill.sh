@@ -68,6 +68,10 @@ if tar -tf "$ARCHIVE" >/dev/null 2>&1; then die "archive non chiffrée"; fi
 log "Destruction complète (conteneurs, volumes, image, .env)"
 compose down -v --remove-orphans >/dev/null 2>&1
 docker image rm -f "$IMAGE" >/dev/null
+# Vraie machine vierge : ni cache de construction ni images de base (PostgreSQL, Caddy, Python) :
+# le temps mesuré comprend leur téléchargement et la construction complète de l'image.
+docker builder prune -af >/dev/null
+docker image rm -f postgres:16 caddy:2 python:3.13-slim >/dev/null 2>&1 || true
 mv "$LAMAALAM_ENV_FILE" "$T/env-detruit"
 docker volume inspect lamaalam_db-data >/dev/null 2>&1 && die "volume de base encore présent"
 
@@ -85,4 +89,4 @@ if deploy/restore.sh "$ARCHIVE" --identity "$T/autre-cle.txt" --yes >/dev/null 2
 fi
 compose ps --status running --services | grep -qx api || die "la pile a été arrêtée par une restauration refusée"
 
-echo "EXERCICE RÉUSSI : restauration complète sur machine vierge en $((R1 - R0)) s (image reconstruite comprise) ; vérification : $RESULT"
+echo "EXERCICE RÉUSSI : restauration complète sur machine vierge en $((R1 - R0)) s (téléchargement des images et construction complète compris) ; vérification : $RESULT"

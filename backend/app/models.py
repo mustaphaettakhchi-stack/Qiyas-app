@@ -77,7 +77,7 @@ class Organization(Timestamped, Base):
     phone: Mapped[str] = mapped_column(String(30), default="")
     email: Mapped[str] = mapped_column(String(254), default="")
     # Change à chaque restauration de sauvegarde : les téléphones savent alors que le serveur
-    # est revenu en arrière et suspendent leur synchronisation (RESTORE.md).
+    # est revenu en arrière et suspendent leur synchronisation (docs/RESTORE.md).
     sync_epoch: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     default_currency: Mapped[str] = mapped_column(String(3), default="MAD")
     estimate_validity_days: Mapped[int] = mapped_column(Integer, default=30)

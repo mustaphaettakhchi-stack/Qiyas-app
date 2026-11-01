@@ -810,7 +810,7 @@ class EpochOut(BaseModel):
 @router.get("/epoch", response_model=EpochOut)
 def sync_epoch(ctx: Context = Depends(require_staff), db: Session = Depends(get_db)) -> EpochOut:
     """Consulté par le téléphone AVANT tout envoi : une époque différente de la sienne signifie
-    que le serveur a été restauré depuis une sauvegarde (RESTORE.md)."""
+    que le serveur a été restauré depuis une sauvegarde (docs/RESTORE.md)."""
     return EpochOut(epoch=db.scalar(select(Organization.sync_epoch).where(Organization.id == ctx.organization_id)))
 
 

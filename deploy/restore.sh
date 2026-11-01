@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restauration complète d'une sauvegarde LAMAALAM (RESTORE.md).
+# Restauration complète d'une sauvegarde LAMAALAM (docs/RESTORE.md).
 #
 #   deploy/restore.sh ARCHIVE.tar.age --identity CLE_PRIVEE.txt [--yes] [--use-archive-env]
 #
@@ -23,7 +23,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -f "$ARCHIVE" ] || die "archive introuvable : ${ARCHIVE:-(aucune)}"
-[ -f "$IDENTITY" ] || die "clé privée age introuvable (--identity), voir BACKUP.md"
+[ -f "$IDENTITY" ] || die "clé privée age introuvable (--identity), voir docs/BACKUP.md"
 need docker age sha256sum tar
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 requis (docker compose)"
 
@@ -69,6 +69,8 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 || build_image
 log "Arrêt des services"
 compose down --remove-orphans >&2
 docker volume rm -f "${PROJECT}_db-data" "${PROJECT}_files-data" >/dev/null
+# Volumes et conteneurs recréés par Compose (sans démarrage) : volumes neufs et vides.
+compose up --no-start --no-build >&2
 
 # 3. Base : une base vide est créée par le conteneur (avec le rôle applicatif), puis remplie.
 log "Restauration de la base"
@@ -94,4 +96,4 @@ compose run --rm --no-deps -T migrate python -m app.cli record-restore \
 COUNTS="$(compose exec -T db psql -U lamaalam_owner -d lamaalam -tA -F ' ' -c \
   "SELECT (SELECT count(*) FROM organizations), (SELECT count(*) FROM users), (SELECT count(*) FROM projects), (SELECT count(*) FROM files)")"
 log "Restauration terminée en $(( $(date +%s) - START )) s — organisations, comptes, projets, fichiers : $COUNTS"
-log "Contrôles à faire maintenant : RESTORE.md, section « Après la restauration »"
+log "Contrôles à faire maintenant : docs/RESTORE.md, section « Après la restauration »"

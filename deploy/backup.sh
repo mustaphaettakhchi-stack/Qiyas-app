@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sauvegarde complète et chiffrée du serveur LAMAALAM (BACKUP.md).
+# Sauvegarde complète et chiffrée du serveur LAMAALAM (docs/BACKUP.md).
 #
 # Contenu : base PostgreSQL (pg_dump), fichiers (photos, PDF), fichier .env (secrets, dont la
 # clé de chiffrement de la double authentification), manifeste avec empreintes SHA-256.
@@ -25,7 +25,7 @@ RECIPIENTS="$(from_env LAMAALAM_BACKUP_RECIPIENTS '')"
 KEEP_DAYS="$(from_env LAMAALAM_BACKUP_KEEP_DAYS 30)"
 COPY_CMD="$(from_env LAMAALAM_BACKUP_COPY_CMD '')"
 
-[ -n "$RECIPIENTS" ] && [ -s "$RECIPIENTS" ] || die "LAMAALAM_BACKUP_RECIPIENTS : fichier de clés publiques age absent (voir BACKUP.md)"
+[ -n "$RECIPIENTS" ] && [ -s "$RECIPIENTS" ] || die "LAMAALAM_BACKUP_RECIPIENTS : fichier de clés publiques age absent (voir docs/BACKUP.md)"
 grep -q '^age1' "$RECIPIENTS" || die "$RECIPIENTS ne contient aucune clé publique age (age1…)"
 if grep -q 'AGE-SECRET-KEY' "$RECIPIENTS"; then
   die "$RECIPIENTS contient une clé SECRÈTE : seule la clé publique doit être sur le serveur"

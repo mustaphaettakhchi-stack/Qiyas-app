@@ -1,7 +1,7 @@
 # Pile serveur LAMAALAM — voir docs/ARCHITECTURE.md §2.
 # Usage : cp .env.example .env ; éditer .env ; docker compose up -d
 # Aucun service payant ; l'hébergement reste à valider (décision D-06).
-# Exploitation : DEPLOYMENT.md, BACKUP.md, RESTORE.md (scripts dans deploy/).
+# Exploitation : docs/DEPLOYMENT.md, docs/BACKUP.md, docs/RESTORE.md (scripts dans deploy/).
 
 # Nom fixe : les volumes s'appellent lamaalam_db-data, lamaalam_files-data… quel que soit
 # le dossier d'installation (les scripts de sauvegarde et de restauration en dépendent).

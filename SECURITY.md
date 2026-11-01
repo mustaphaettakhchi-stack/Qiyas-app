@@ -94,11 +94,13 @@ Conservation : 12 mois en ligne, puis archivage chiffré (durée à fixer avec l
 
 ## 10. Sauvegardes et restauration
 
-- Quotidienne : `pg_dump` chiffré + fichiers (restic, dédupliqué, chiffré), vers un support **physiquement distinct** du serveur.
-- Hebdomadaire : copie hors site (emplacement à décider ; tout service payant est soumis à accord).
-- Rétention proposée : 7 quotidiennes, 4 hebdomadaires, 12 mensuelles.
-- **Test de restauration mensuel** sur une machine vierge, consigné. Une sauvegarde non testée n'est pas considérée comme une sauvegarde.
-- Procédures détaillées dans `BACKUP.md` et `RESTORE.md` (Phase 1).
+Mis en œuvre au lot 1.9 : [`docs/BACKUP.md`](docs/BACKUP.md), [`docs/RESTORE.md`](docs/RESTORE.md).
+
+- Quotidienne (`deploy/backup.sh`, tâche planifiée) : base (`pg_dump`), fichiers, `.env` et manifeste avec empreintes SHA-256, **chiffrés avec age vers une clé publique** ; la clé privée n'est jamais sur le serveur (un serveur compromis ne livre pas ses sauvegardes). Écart : age remplace restic, prévu au départ, qui aurait exigé un mot de passe de chiffrement sur le serveur.
+- Copie **sur un support physiquement distinct** (`LAMAALAM_BACKUP_COPY_CMD` ou récupération par une machine de Group LAMAALAM) ; tout stockage payant est soumis à accord.
+- Rétention : 30 jours sur le serveur (7 archives au moins) ; 7 quotidiennes, 4 hebdomadaires, 12 mensuelles conseillées hors du serveur.
+- Restauration (`deploy/restore.sh`) : contrôle d'intégrité avant toute modification, refus d'une clé de double authentification différente, journal d'audit (`backup.restore`). Protection des téléphones : époque de synchronisation, séquence avancée, 100 références réservées par compteur (aucun numéro réattribué), versions plus anciennes traitées en conflit.
+- **Exercice de restauration complète sur machine vierge** (`tool/restore_drill.sh`) à chaque modification du code (CI) et chaque mois sur une machine d'essai ; restauration trimestrielle de la vraie dernière archive avec la vraie clé. Une sauvegarde non testée n'est pas considérée comme une sauvegarde.
 
 ## 11. Données personnelles (loi 09-08 et RGPD)
 

@@ -9,17 +9,18 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | Élément | État |
 | --- | --- |
 | Phase 0 — audit et conception | Close (sauf décision D-06 sur l'hébergement) |
-| Serveur : comptes, rôles, invitations, double authentification, journal d'audit | Fait, testé (37 tests sur PostgreSQL) |
-| Application : relevé de pièces rectangulaires, métré, grille de prix, devis PDF, partage | Hérité de Qiyas, fonctionnel, **local au téléphone** |
+| Serveur : comptes, rôles, invitations, double authentification, journal d'audit | Fait, testé (99 tests serveur au total, sur PostgreSQL) |
+| Application : relevé de pièces rectangulaires, métré, grille de prix, devis PDF, partage | Remplacé par les lots 1.3 à 1.6 (pièces de toute forme, métré validé, devis serveur) |
 | Application : charte LAMAALAM, logo, aucune donnée de démonstration | Fait |
 | Application : connexion au serveur, double authentification, invitation, gestion de l'équipe | Fait, testé de bout en bout contre le serveur réel |
-| Clients et projets partagés entre téléphones (synchronisation, conflits, références `LMA-AAAA-NNNN`) | Fait, testé de bout en bout ; pièces, photos et devis restent locaux |
+| Clients et projets partagés entre téléphones (synchronisation, conflits, références `LMA-AAAA-NNNN`) | Fait, testé de bout en bout (pièces, devis et bibliothèque synchronisés depuis ; les photos restent sur le téléphone sauf celles partagées dans l'espace client) |
 | Pièces de toute forme (mur par mur, angles), origine des cotes, contrôle de fermeture, plan, pièces synchronisées | Fait, testé (cas partagés application/serveur, bout en bout à deux téléphones) ; à valider sur 10 pièces réelles |
 | Métré par lot et par pièce, éléments comptés, perte affichée, validation du métré | Fait, testé (unitaires et bout en bout) |
 | Bibliothèque partagée (ouvrages, matériaux, fournisseurs), historique des prix, import CSV | Fait, testé ; démarre vide |
 | Devis : versions, validation, numérotation serveur, TVA par taux, MAD/EUR, prix calculés, PDF Unicode | Fait, testé ; mentions légales à valider par l'expert-comptable |
 | Tableau de bord (indicateurs, à faire, dernières opérations) | Fait, testé (indicateurs identiques à ceux du serveur) |
-| Photos synchronisées, espace client | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
+| Espace client en lecture seule (devis envoyés, photos partagées, étapes, messages, non-lus) | Fait, testé (client A contre client B) ; test d'intrusion manuel et essai avec 2 clients réels à faire |
+| Exploitation : déploiement, sauvegarde chiffrée, restauration | Fait, exercice de restauration sur machine vierge à chaque modification (CI) ; **aucun hébergement en service (D-06)** |
 
 ## Documentation
 
@@ -30,6 +31,12 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) | Schéma de données cible |
 | [`docs/USER_FLOWS.md`](docs/USER_FLOWS.md) | Parcours et critères d'acceptation |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Phases et état d'avancement |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Installer un serveur et les téléphones |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Mettre à jour, revenir en arrière, surveiller |
+| [`docs/BACKUP.md`](docs/BACKUP.md) / [`docs/RESTORE.md`](docs/RESTORE.md) | Sauvegardes chiffrées, restauration, exercice mensuel |
+| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | Guide d'utilisation (équipe et clients) |
+| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Règles, tests, migrations, sécurité pour les développeurs |
+| [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md) | Rapport de tests de la phase 1 |
 | [`SECURITY.md`](SECURITY.md) | Sécurité et données personnelles |
 | [`OPEN_SOURCE_LICENSE_REGISTER.md`](OPEN_SOURCE_LICENSE_REGISTER.md) | Registre des licences |
 | [`assets/branding/README.md`](assets/branding/README.md) | Fichiers du logo et réserves |
@@ -81,16 +88,7 @@ export LAMAALAM_TEST_DATABASE_URL=postgresql+psycopg://utilisateur:motdepasse@lo
 python -m pytest -q
 ```
 
-Déploiement avec Docker Compose (aucun hébergement n'est encore validé) :
-
-```bash
-cp .env.example .env        # renseigner les secrets ; ne jamais versionner .env
-docker compose up -d --build
-docker compose run --rm api python -m app.cli create-admin \
-    --organization "Groupe LAMAALAM" --email adresse@exemple.ma --name "Prénom Nom"
-```
-
-Aucun compte n'existe par défaut. L'administrateur configure sa double authentification à la première connexion (application TOTP libre, par exemple Aegis ou FreeOTP).
+Déploiement (aucun hébergement n'est encore validé, décision D-06) : [`docs/INSTALLATION.md`](docs/INSTALLATION.md), puis `deploy/deploy.sh`. Sauvegardes : [`docs/BACKUP.md`](docs/BACKUP.md).
 
 ## Organisation du code
 
@@ -106,7 +104,8 @@ backend/
   app/                   API FastAPI : config, modèles, sécurité, routes
   migrations/            migrations Alembic
   tests/                 tests sur PostgreSQL réel
-deploy/                  Caddyfile, initialisation du rôle applicatif PostgreSQL
+deploy/                  Caddyfile, rôle applicatif PostgreSQL, scripts deploy / backup / restore
+tool/                    test de bout en bout, exercice de restauration
 assets/branding/         logo original et variantes
 docker-compose.yml       pile serveur
 ```
@@ -116,5 +115,5 @@ docker-compose.yml       pile serveur
 | Fonction | État |
 | --- | --- |
 | Connexion | Réelle (serveur LAMAALAM). Une version « démonstration sans serveur » n'existe que si elle est compilée avec `--dart-define=LAMAALAM_DEMO=true` ; elle l'affiche en clair |
-| Synchronisation | Réelle pour les clients et projets ; la version « démonstration sans serveur » affiche « Sur ce téléphone » |
+| Synchronisation | Réelle (clients, projets, pièces, devis, bibliothèque) ; la version « démonstration sans serveur » affiche « Sur ce téléphone » |
 | Télémètre Bluetooth | Non branché ; le bouton de mesure simulée est masqué pour ne jamais produire de cote inventée (décision D-02) |

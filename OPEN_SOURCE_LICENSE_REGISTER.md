@@ -94,6 +94,7 @@ Statuts : **APPROUVÉ** (intégrable) · **À EXAMINER** (suspendu, décision LA
 | Image Docker `postgres:16` | hub.docker.com/_/postgres | 16 | PostgreSQL License + paquets Debian | Oui | Notice | Debian | Image officielle, à épingler par empreinte avant la production | APPROUVÉ |
 | Image Docker `python:3.13-slim` | hub.docker.com/_/python | 3.13 | PSF-2.0 + paquets Debian | Oui | Notice | Debian | Idem | APPROUVÉ |
 | Image Docker `caddy:2` | hub.docker.com/_/caddy | 2 | Apache-2.0 | Oui | Notice | — | Idem | APPROUVÉ |
+| age / age-keygen (outil d'exploitation, lot 1.9) (à re-vérifier) | github.com/FiloSottile/age | 1.1.1 (testée) | BSD-3-Clause | Oui | Notice | — (Go, binaire statique) | Faible ; installé sur le serveur et le poste du gérant, jamais distribué avec l'application | APPROUVÉ |
 
 ## 3. Vision par ordinateur, reconstruction, rendu, vidéo
 

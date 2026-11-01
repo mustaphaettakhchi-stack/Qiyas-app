@@ -14,7 +14,7 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*" >&2; }
 die() { printf 'ERREUR : %s\n' "$*" >&2; exit 1; }
 
 need() {
-  for c in "$@"; do command -v "$c" >/dev/null 2>&1 || die "commande « $c » introuvable (voir INSTALLATION.md)"; done
+  for c in "$@"; do command -v "$c" >/dev/null 2>&1 || die "commande « $c » introuvable (voir docs/INSTALLATION.md)"; done
 }
 
 compose() {
@@ -30,7 +30,7 @@ env_value() {
 }
 
 check_env() {
-  [ -f "$ENV_FILE" ] || die "fichier $ENV_FILE absent (copier .env.example, voir DEPLOYMENT.md)"
+  [ -f "$ENV_FILE" ] || die "fichier $ENV_FILE absent (copier .env.example, voir docs/INSTALLATION.md)"
   local mode
   mode="$(stat -c %a "$ENV_FILE")"
   [ "$mode" = "600" ] || [ "$mode" = "400" ] || die "$ENV_FILE doit être lisible par son seul propriétaire : chmod 600 $ENV_FILE"

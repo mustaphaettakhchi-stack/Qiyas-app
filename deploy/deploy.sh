@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Déploiement ou mise à jour du serveur LAMAALAM (DEPLOYMENT.md).
+# Déploiement ou mise à jour du serveur LAMAALAM (docs/DEPLOYMENT.md).
 #
 #   deploy/deploy.sh              construit l'image, sauvegarde si une base existe, démarre
 #   deploy/deploy.sh --no-backup  sans sauvegarde préalable (première installation)
