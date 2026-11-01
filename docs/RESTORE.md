@@ -30,7 +30,7 @@ Le script :
 5. redémarre ; les migrations mettent à niveau une archive plus ancienne que le code ;
 6. prépare le serveur pour les téléphones (§ 4) et inscrit la restauration au journal d'audit.
 
-**Durée mesurée** : 17 secondes sur la machine de développement, avec l'image Docker en cache. Sur une machine vierge, la construction de l'image s'y ajoute : voir le temps relevé par la CI dans [`TEST_REPORT.md`](TEST_REPORT.md). Le temps croît avec le volume des photos.
+**Durée mesurée** : **31 secondes** sur une machine vierge (CI GitHub, sans aucun cache : téléchargement des images et construction complète compris) ; 17 secondes sur une machine où l'image existe déjà. Ces mesures portent sur une archive de test très petite : le temps croît avec le volume des photos et de la base, et sera relevé sur la première vraie archive.
 
 **Dépendance à Docker Hub** : sur une machine neuve, les images PostgreSQL, Caddy et Python sont téléchargées depuis Docker Hub, qui limite les téléchargements anonymes (refus « 429 Too Many Requests » constaté lors des essais après des téléchargements répétés). Parade, une fois par mois, sur le serveur : `docker save postgres:16 caddy:2 python:3.13-slim lamaalam-api:local | gzip > /var/backups/lamaalam/images-docker.tar.gz` (copié hors du serveur avec les archives) ; sur la machine neuve, `gunzip -c images-docker.tar.gz | docker load` avant `deploy/restore.sh`. Ces images ne contiennent aucune donnée de Group LAMAALAM.
 

@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | Restauration, poste de développement | 17 s | image Docker en cache |
 | Restauration, machine GitHub neuve | 13 s | image construite plus tôt dans le même exercice (cache de construction encore présent) |
-| Restauration, machine vierge **sans aucun cache** | mesurée par la CI à partir de cette version (job `exploitation`, résumé de l'exécution) | images téléchargées et construction complète comprises |
+| Restauration, machine vierge **sans aucun cache** | **31 s** | CI, exécution n° 11 (commit 987ff79) : images PostgreSQL et Caddy téléchargées, image de l'API entièrement reconstruite (8,6 s d'installation des dépendances), base et fichiers restaurés, migrations, démarrage |
 
 L'exercice crée volontairement peu de données. Le temps réel augmente avec le volume des photos et de la base ; il sera mesuré sur la première vraie archive.
 
