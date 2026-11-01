@@ -10,6 +10,37 @@ permissions:
   contents: write
 
 jobs:
+  serveur:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lamaalam
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: lamaalam_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lamaalam" --health-interval 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Dépendances
+        run: pip install -r requirements-dev.txt
+      - name: Tests (base PostgreSQL réelle)
+        env:
+          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
+        run: python -m pytest -q
+      - name: Migrations cohérentes avec les modèles
+        env:
+          LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
+        run: alembic check
+
   verifier-et-construire:
     runs-on: ubuntu-latest
     steps:
@@ -34,7 +65,7 @@ jobs:
           flutter analyze --no-fatal-infos > analyze.txt 2>&1; A=$?
           flutter test > test.txt 2>&1; T=$?
           # Les dossiers android/ et ios/ ne sont pas versionnés : on les génère ici.
-          flutter create --platforms=android --org ma.qiyas --project-name qiyas . > create.txt 2>&1
+          flutter create --platforms=android --org ma.grouplamaalam --project-name lamaalam . > create.txt 2>&1
           rm -f test/widget_test.dart
           flutter build apk --debug > build.txt 2>&1; B=$?
           K=$(grep -c "apply Kotlin Gradle Plugin" build.txt)
@@ -65,11 +96,11 @@ jobs:
           echo "T=$T" >> "$GITHUB_ENV"
           echo "B=$B" >> "$GITHUB_ENV"
 
-      - name: APK de test pour les artisans pilotes
+      - name: APK de test
         if: env.B == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: qiyas-debug-apk
+          name: lamaalam-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30
 
@@ -77,8 +108,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           cp ci-report.md /tmp/ci-report.md
-          git config user.name "qiyas-ci"
-          git config user.email "qiyas-ci@users.noreply.github.com"
+          git config user.name "lamaalam-ci"
+          git config user.email "lamaalam-ci@users.noreply.github.com"
           git checkout --orphan ci-results
           git rm -rf --cached . > /dev/null
           cp /tmp/ci-report.md ci-report.md

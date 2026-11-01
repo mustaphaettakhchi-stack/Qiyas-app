@@ -1,0 +1,14 @@
+# Certificat HTTPS obtenu automatiquement (Let's Encrypt) pour le domaine indiqué.
+{$LAMAALAM_DOMAIN} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	request_body {
+		max_size 600MB
+	}
+	reverse_proxy api:8000
+}
