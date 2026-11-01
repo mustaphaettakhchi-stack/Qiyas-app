@@ -10,13 +10,9 @@ abstract class SyncService {
   Future<Set<String>> push(AppData data);
 }
 
-/// Implémentation vide : rien ne quitte le téléphone.
-/// Les projets restent marqués « à synchroniser » tant qu'aucun backend n'est branché,
-/// sauf si l'utilisateur simule le réseau dans le profil (démo).
+/// Implémentation vide : rien ne quitte le téléphone, donc aucun projet n'est jamais
+/// déclaré synchronisé. Remplacée par la synchronisation avec l'API LAMAALAM (lot 1.2).
 class LocalOnlySyncService implements SyncService {
   @override
-  Future<Set<String>> push(AppData data) async {
-    if (!data.online) return {};
-    return data.projects.where((p) => !p.synced).map((p) => p.id).toSet();
-  }
+  Future<Set<String>> push(AppData data) async => {};
 }

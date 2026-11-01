@@ -1,6 +1,6 @@
 # Registre des licences Open Source — LAMAALAM
 
-Version 0.1 — 1er novembre 2026
+Version 0.2 — 1er novembre 2026 (ajouts du lot 1.1 : zxcvbn, cryptography, images Docker)
 
 ## Méthode de vérification
 
@@ -63,12 +63,14 @@ Statuts : **APPROUVÉ** (intégrable) · **À EXAMINER** (suspendu, décision LA
 | Pydantic / pydantic-settings | github.com/pydantic/pydantic | 2.14.2 / 2.16.2 | MIT | Oui | Notice | pydantic-core (MIT, Rust) | Faible | APPROUVÉ |
 | SQLAlchemy | sqlalchemy.org | 2.1.6 | MIT | Oui | Notice | — | Faible | APPROUVÉ |
 | Alembic | github.com/sqlalchemy/alembic | 1.20.1 | MIT | Oui | Notice | Mako (MIT) | Faible | APPROUVÉ |
-| psycopg 3 | psycopg.org | 3.3.6 | LGPL-3.0-only | Oui | Utilisation non modifiée, en tant que bibliothèque : pas d'obligation sur notre code ; fournir la licence ; si modifiée, publier les modifications | libpq (PostgreSQL License) | Faible si non modifiée et non redistribuée | APPROUVÉ (sans modification) |
+| psycopg 3 (avec `psycopg[binary]`) | psycopg.org | 3.3.6 | LGPL-3.0-only | Oui | Utilisation non modifiée, en tant que bibliothèque : pas d'obligation sur notre code ; fournir la licence ; si modifiée, publier les modifications | libpq (PostgreSQL License) et OpenSSL embarqués par `psycopg-binary` | Faible si non modifiée et non redistribuée | APPROUVÉ (sans modification) |
 | PostgreSQL (à re-vérifier) | postgresql.org | ≥ 16 | PostgreSQL License | Oui | Notice | — | Faible | APPROUVÉ |
 | Procrastinate | github.com/procrastinate-org/procrastinate | 3.10.0 | MIT | Oui | Notice | psycopg | Faible | APPROUVÉ |
 | argon2-cffi | github.com/hynek/argon2-cffi | 25.1.0 | MIT | Oui | Notice | argon2 de référence (CC0 / Apache-2.0) | Faible | APPROUVÉ |
 | PyJWT | github.com/jpadilla/pyjwt | 2.15.1 | MIT | Oui | Notice | cryptography (Apache-2.0 / BSD) | Faible | APPROUVÉ |
 | PyOTP | github.com/pyauth/pyotp | 2.10.0 | MIT | Oui | Notice | — | Faible | APPROUVÉ |
+| cryptography | github.com/pyca/cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Oui | Notice | OpenSSL embarqué dans les roues (Apache-2.0) | Faible | APPROUVÉ |
+| zxcvbn (Python, contrôle de robustesse des mots de passe) | github.com/dwolfhub/zxcvbn-python | 4.5.0 | MIT | Oui | Notice | Listes de fréquence intégrées au paquet | Dernière publication en février 2025 : maintenance faible, à surveiller | APPROUVÉ |
 | python-multipart | github.com/Kludex/python-multipart | 0.0.33 | Apache-2.0 | Oui | Notice | — | Faible | APPROUVÉ |
 | email-validator | github.com/JoshData/python-email-validator | 2.3.0 | Unlicense | Oui | Aucune | dnspython (ISC) | Faible | APPROUVÉ |
 | Jinja2 | github.com/pallets/jinja | 3.1.6 | BSD-3-Clause | Oui | Notice | MarkupSafe (BSD-3) | Faible | APPROUVÉ |
@@ -87,6 +89,9 @@ Statuts : **APPROUVÉ** (intégrable) · **À EXAMINER** (suspendu, décision LA
 | Docker Engine / Compose (à re-vérifier) | github.com/moby/moby, github.com/docker/compose | à figer | Apache-2.0 | Oui | Notice | — | **Docker Desktop est payant** pour les entreprises au-delà d'un seuil : n'utiliser que Docker Engine sur Linux | APPROUVÉ (Engine uniquement) |
 | Debian (à re-vérifier) | debian.org | stable | Licences libres multiples (DFSG) | Oui | Selon paquets | — | Faible | APPROUVÉ |
 | restic (sauvegardes) (à re-vérifier) | github.com/restic/restic | à figer | BSD-2-Clause | Oui | Notice | — | Faible | APPROUVÉ |
+| Image Docker `postgres:16` | hub.docker.com/_/postgres | 16 | PostgreSQL License + paquets Debian | Oui | Notice | Debian | Image officielle, à épingler par empreinte avant la production | APPROUVÉ |
+| Image Docker `python:3.13-slim` | hub.docker.com/_/python | 3.13 | PSF-2.0 + paquets Debian | Oui | Notice | Debian | Idem | APPROUVÉ |
+| Image Docker `caddy:2` | hub.docker.com/_/caddy | 2 | Apache-2.0 | Oui | Notice | — | Idem | APPROUVÉ |
 
 ## 3. Vision par ordinateur, reconstruction, rendu, vidéo
 

@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/messages.dart';
 import '../../data/app_state.dart';
-import '../../data/sample_data.dart';
+import '../../data/templates.dart';
 import '../../domain/models.dart';
 import '../widgets/common.dart';
 

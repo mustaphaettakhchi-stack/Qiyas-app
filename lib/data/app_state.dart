@@ -5,7 +5,7 @@ import '../domain/calculations.dart';
 import '../domain/models.dart';
 import '../services/sync_service.dart';
 import 'local_store.dart';
-import 'sample_data.dart';
+import 'templates.dart';
 
 /// État central de l'application. Chaque modification passe par [mutate],
 /// qui horodate le projet, sauvegarde sur le téléphone, tente une synchronisation
@@ -23,7 +23,7 @@ class AppState extends ChangeNotifier {
   String newId() => _uuid.v4();
 
   Future<void> init() async {
-    data = await store.load() ?? sampleData();
+    data = await store.load() ?? AppData(company: Company(), prestations: [], projects: []);
     loaded = true;
     notifyListeners();
   }
@@ -78,11 +78,6 @@ class AppState extends ChangeNotifier {
 
   void setOnline(bool online) => mutate(() => data.online = online);
 
-  Future<void> resetToSample() async {
-    data = sampleData()..authenticated = true;
-    notifyListeners();
-    await _persist();
-  }
 
   // ---------- projets ----------
   Project createProject() {

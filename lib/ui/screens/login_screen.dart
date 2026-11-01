@@ -72,9 +72,18 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: SafeArea(
         child: ListView(padding: const EdgeInsets.all(24), children: [
-          const SizedBox(height: 40),
-          Text('Qiyas', style: t.displayMedium?.copyWith(fontWeight: FontWeight.w800)),
-          Text('Du relevé au devis, sur le chantier.', style: t.titleMedium),
+          const SizedBox(height: 24),
+          Center(
+            child: Image.asset(
+              'assets/branding/logo_lamaalam_circle_512.png',
+              width: 160,
+              height: 160,
+              semanticLabel: 'Logo Groupe LAMAALAM',
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('LAMAALAM', textAlign: TextAlign.center, style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+          Text('Du relevé au devis, sur le chantier.', textAlign: TextAlign.center, style: t.titleMedium),
           const SizedBox(height: 32),
           if (_normalized == null) ...[
             TextField(
@@ -87,8 +96,8 @@ class _LoginScreenState extends State<LoginScreen> {
             FilledButton(onPressed: _busy ? null : _send, child: const Text('Recevoir le code par SMS')),
             const SizedBox(height: 12),
             Text(
-              'En continuant, vous acceptez les conditions d\'utilisation et le traitement de vos données, '
-              'déclaré à la CNDP (loi 09-08).',
+              'Version de test : les données restent sur ce téléphone. '
+              'La connexion sécurisée au serveur LAMAALAM arrive dans la prochaine version.',
               style: t.bodySmall,
             ),
           ] else ...[

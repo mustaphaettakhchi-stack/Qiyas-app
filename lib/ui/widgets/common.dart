@@ -207,11 +207,11 @@ class SyncBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AppState>();
-    final n = s.unsyncedCount;
-    final online = s.data.online;
-    final color = online && n == 0 ? const Color(0xFF2F7D55) : const Color(0xFFB5651D);
-    final label = !online ? 'Hors connexion' : (n == 0 ? 'Synchronisé' : '$n à synchroniser');
+    // Tant que la synchronisation serveur n'est pas branchée, l'indicateur dit la vérité :
+    // les données sont enregistrées sur le téléphone uniquement.
+    context.watch<AppState>();
+    const color = Color(0xFFF28C00);
+    const label = 'Sur ce téléphone';
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: Row(mainAxisSize: MainAxisSize.min, children: [

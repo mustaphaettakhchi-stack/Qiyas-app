@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:qiyas/core/format.dart';
-import 'package:qiyas/data/sample_data.dart';
-import 'package:qiyas/domain/calculations.dart';
-import 'package:qiyas/domain/models.dart';
+import 'package:lamaalam/core/format.dart';
+import 'package:lamaalam/data/templates.dart';
+import 'package:lamaalam/domain/calculations.dart';
+import 'package:lamaalam/domain/models.dart';
+
+import 'support/reference_data.dart';
 
 /// Cas de test de référence du cahier des charges (section « Règles de calcul »).
 void main() {

@@ -1,9 +1,9 @@
-import '../domain/calculations.dart';
-import '../domain/models.dart';
+// Données de référence UNIQUEMENT pour les tests (cas « M. Benali », 5 pièces).
+// Elles ne sont jamais embarquées dans l'application.
 
-/// Données d'exemple : elles reprennent le cas de test de référence du cahier des charges
-/// (projet M. Benali, 5 pièces : 27 989 MAD HT, 33 587 MAD TTC).
-/// Elles sont clairement marquées « exemple » et peuvent être effacées depuis le profil.
+import 'package:lamaalam/data/templates.dart';
+import 'package:lamaalam/domain/calculations.dart';
+import 'package:lamaalam/domain/models.dart';
 
 Room _room(String id, String name, double l, double w, double h, int doors, int windows) => Room(
       id: id,
@@ -34,17 +34,6 @@ List<Prestation> samplePrestations() => [
       Prestation(id: 'dp', name: 'Dépose ancien revêtement', description: 'évacuation des gravats', unit: 'm²', base: QuantityBase.floor, unitPriceCents: 4000),
       Prestation(id: 'ne', name: 'Nettoyage fin de chantier', unit: 'forfait', base: QuantityBase.free, unitPriceCents: 80000),
     ];
-
-QuoteLine lineFrom(Prestation p, String id) => QuoteLine(
-      id: id,
-      prestationId: p.id,
-      label: p.name,
-      description: p.description,
-      unit: p.unit,
-      base: p.base,
-      quantity: p.base == QuantityBase.free ? 1 : 0,
-      unitPriceCents: p.unitPriceCents,
-    );
 
 void _freeze(Project p, Quote q) {
   final m = projectMeasures(p);
@@ -140,32 +129,3 @@ AppData sampleData() {
   );
 }
 
-/// Grilles modèles par métier (E8). Les prix sont à zéro : l'artisan les complète.
-const Map<String, List<(String, String, String, QuantityBase)>> kPriceTemplates = {
-  'Peinture': [
-    ('Peinture murs', '2 couches', 'm²', QuantityBase.walls),
-    ('Peinture plafond', '2 couches', 'm²', QuantityBase.ceiling),
-    ('Enduit de rebouchage', '', 'm²', QuantityBase.walls),
-  ],
-  'Carrelage': [
-    ('Carrelage sol', 'fourni et posé', 'm²', QuantityBase.floor),
-    ('Plinthes', 'assorties', 'ml', QuantityBase.skirting),
-    ('Faïence murale', '', 'm²', QuantityBase.free),
-  ],
-  'Plâtre et faux plafond': [
-    ('Faux plafond BA13', 'sur ossature', 'm²', QuantityBase.ceiling),
-    ('Corniche plâtre', '', 'ml', QuantityBase.skirting),
-  ],
-  'Plomberie simple': [
-    ('Remplacement robinetterie', '', 'u', QuantityBase.free),
-    ('Pose lavabo', '', 'u', QuantityBase.free),
-  ],
-  'Électricité simple': [
-    ('Point lumineux', '', 'u', QuantityBase.free),
-    ('Prise de courant', '', 'u', QuantityBase.free),
-  ],
-  'Rénovation générale': [
-    ('Dépose et évacuation', '', 'm²', QuantityBase.floor),
-    ('Nettoyage fin de chantier', '', 'forfait', QuantityBase.free),
-  ],
-};

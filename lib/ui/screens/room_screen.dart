@@ -127,14 +127,18 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
           ],
         ]),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _measuring ? null : () => _measure(s, p, r),
-          icon: _measuring
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.straighten),
-          label: Text('Mesurer « ${_dimLabels[_active]} » au télémètre${laser.isSimulated ? ' (simulé)' : ''}'),
-        ),
+        // Un télémètre simulé produirait des cotes inventées : le bouton n'apparaît
+        // qu'avec un appareil réel (décision D-02).
+        if (!laser.isSimulated) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _measuring ? null : () => _measure(s, p, r),
+            icon: _measuring
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.straighten),
+            label: Text('Mesurer « ${_dimLabels[_active]} » au télémètre'),
+          ),
+        ],
         for (final w in warnings) ...[const SizedBox(height: 8), AlertBox(w, kind: AlertKind.warning)],
         const SizedBox(height: 8),
         Card(

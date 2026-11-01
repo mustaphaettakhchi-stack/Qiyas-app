@@ -1,6 +1,6 @@
 # Phase 0 — Audit, risques et décisions à valider par Groupe LAMAALAM
 
-Version 0.1 — 1er novembre 2026 — statut : **EN ATTENTE DE VALIDATION**
+Version 0.2 — 1er novembre 2026 — statut : **Phase 0 close pour les décisions bloquantes ; D-06 en attente**
 
 Ce document est la porte d'entrée de la Phase 0. Il recense ce qui existe, ce qui pose problème dans le cahier des charges, et les décisions que seul Groupe LAMAALAM peut prendre. **Aucun développement de la Phase 1 ne démarre avant réponse aux décisions marquées « bloquante ».**
 
@@ -169,3 +169,37 @@ Chaque modèle sera inscrit au registre avant tout téléchargement. Retenus pou
 | Fuite de données client (photos de domiciles) | Faible | Très élevé | Isolation par organisation et par client côté serveur, URL de fichiers signées et expirantes, tests d'autorisation systématiques |
 | Mentions fiscales du devis erronées | Moyenne | Élevé | Validation par un expert-comptable avant usage commercial |
 | Appareils Android d'entrée de gamme | Élevée | Moyen | Compression à la capture, traitement lourd sur le serveur, tests sur appareil 3 Go de RAM |
+
+---
+
+## 5. Décisions reçues le 1er novembre 2026
+
+| # | Réponse de Groupe LAMAALAM | Conséquence appliquée | Réserves |
+| --- | --- | --- | --- |
+| D-01 | Faire évoluer Qiyas et le remplacer | Paquet renommé `lamaalam`, application « LAMAALAM ». Données d'exemple et prix inventés retirés de l'application (conservés uniquement pour les tests). Les données d'une ancienne installation Qiyas sont reprises au premier lancement. | — |
+| D-05 | Double authentification acceptée | E-mail + mot de passe (Argon2id) + TOTP obligatoire pour administrateurs et collaborateurs, codes de secours, comptes par invitation : implémenté côté serveur (lot 1.1). | L'application mobile utilise encore la connexion de démonstration Qiyas : son remplacement est le prochain lot. |
+| D-06 | Hostinger envisagé, **non validé** | Aucun engagement, aucun compte créé. La pile reste portable (Docker Compose) et se développe en local. | Voir ci-dessous. |
+| D-07 | Logo fourni | Fichier stocké sans modification ; variante circulaire à fond transparent créée par simple recadrage. | Quatre réserves dans `assets/branding/README.md` (maquette 3D et non fichier source, numéro de téléphone intégré, « group » ou « Groupe », droits). |
+| D-08 | Compte provisoire Gmail (adresse de contact de l'entreprise) | Relais SMTP configurable par variables d'environnement, jamais dans le code ; sans configuration, le lien d'invitation est affiché à l'administrateur. | Voir ci-dessous. |
+
+### Réserves sur Hostinger (D-06)
+
+- **Type d'offre.** Seul un **VPS** (serveur virtuel avec accès root) peut faire tourner Docker, PostgreSQL et les traitements. Les offres d'hébergement web mutualisé ou « cloud » de Hostinger ne le permettent pas.
+- **Localisation.** À ma connaissance, Hostinger n'a pas de centre de données au Maroc (à vérifier au moment de la commande). Les données personnelles des clients seraient donc **transférées hors du Maroc** : régime de transfert de la loi 09-08, à traiter avec la CNDP **avant** la mise en production.
+- **Pas de GPU.** Les VPS standard n'ont pas de carte graphique : suffisant pour les phases 1 et 4, insuffisant pour la reconstruction dense et les rendus photoréalistes (D-04).
+- **Coût.** C'est un service payant : il ne sera souscrit que sur votre décision explicite. La pile n'utilise aucun service propre à Hostinger, ce qui garantit qu'on pourra changer d'hébergeur sans réécriture.
+
+### Réserves sur Gmail (D-08)
+
+- Le compte doit avoir la **validation en deux étapes Google activée** et un **mot de passe d'application** dédié ; ce mot de passe ne doit être stocké que dans le fichier `.env` du serveur.
+- Gmail grand public limite le volume d'envoi quotidien et n'est pas conçu pour les envois applicatifs : suffisant pour des invitations, pas pour des notifications en masse.
+- Gmail est un service propriétaire (gratuit) : acceptable comme solution **provisoire**, à remplacer par la messagerie du nom de domaine de l'entreprise lorsqu'elle existera.
+
+### Décisions restant ouvertes
+
+D-02 (télémètre), D-03 (ARKit/ARCore), D-04 (GPU), D-06 (hébergement), D-09 (comptes stores), D-10 (vidéo), D-11 (modèles d'IA). Aucune ne bloque la suite de la Phase 1, sauf D-06 pour la mise en service de l'espace client.
+
+### Nouveaux constats
+
+- **Contraste de la palette.** Texte blanc sur orange #F28C00 : 2,46:1, soit moins que le minimum WCAG AA de 4,5:1. L'application utilise donc du **texte noir sur les boutons orange** (7,41:1). Le gris technique #777777 n'atteint que 4,08:1 sur #151515 : il est réservé aux bordures, et le texte secondaire utilise #B3B3B3 (8,71:1). **Cet écart à la palette est à valider.**
+- **Fausses informations retirées de Qiyas** : l'indicateur « Synchronisé » s'affichait alors qu'aucune donnée ne quittait le téléphone, et l'écran de connexion affirmait un traitement « déclaré à la CNDP ». Les deux sont supprimés. De même, le bouton « télémètre simulé » injectait dans les cotes une valeur aléatoire à ±3 % : il est masqué tant qu'aucun appareil réel n'est branché.

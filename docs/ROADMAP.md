@@ -4,13 +4,17 @@ Version 0.1 — 1er novembre 2026 — statut : **PROPOSITION, à valider**
 
 Règle de passage : une phase n'est close que lorsque ses critères de sortie sont atteints **sur de vrais chantiers**, testés par au moins un collaborateur de LAMAALAM qui n'a pas participé au développement. Aucune durée n'est garantie ; les estimations ci-dessous sont des ordres de grandeur pour un développement assisté par IA avec validation humaine régulière, et dépendent fortement des délais de réponse aux décisions.
 
-## Phase 0 — Audit et conception (en cours)
+## Phase 0 — Audit et conception (close le 1er novembre 2026, sauf D-06)
 
 Livrables : `docs/PHASE0_DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE_SCHEMA.md`, `OPEN_SOURCE_LICENSE_REGISTER.md`, `SECURITY.md`, `docs/ROADMAP.md`, `docs/USER_FLOWS.md`.
 
 Sortie : réponses de LAMAALAM aux décisions bloquantes D-01, D-05, D-06, D-07, D-08.
 
 ## Phase 1 — MVP opérationnel
+
+**État au 1er novembre 2026** :
+- Lot 1.0 *partiel* : renommage, charte et logo, retrait des données de démonstration, serveur FastAPI + PostgreSQL + Alembic, Docker Compose, CI serveur. **Reste à faire** : Riverpod, go_router, Drift, ARB, contrôle automatique des licences dans la CI.
+- Lot 1.1 *côté serveur* : comptes, rôles, invitations, 2FA TOTP, codes de secours, sessions révocables, verrouillage, journal d'audit, test d'isolation entre organisations, test qui vérifie qu'aucune route privée n'est accessible sans session (37 tests sur PostgreSQL réel). **Reste à faire** : écrans de connexion et d'administration dans l'application mobile, qui utilise encore la connexion de démonstration Qiyas.
 
 Ordre de développement (chaque lot est livré testé avant le suivant) :
 

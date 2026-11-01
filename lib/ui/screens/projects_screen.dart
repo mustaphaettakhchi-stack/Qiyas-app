@@ -105,7 +105,7 @@ class _ProjectCard extends StatelessWidget {
             Row(children: [
               Expanded(
                 child: Text(
-                  '${p.city} · ${frDate(p.updatedAt)}${p.synced ? '' : ' · non synchronisé'}',
+                  '${p.city} · ${frDate(p.updatedAt)}',
                   style: t.bodySmall,
                 ),
               ),

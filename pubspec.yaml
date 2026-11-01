@@ -1,5 +1,5 @@
-name: qiyas
-description: "Qiyas – relevé, métré et devis pour les artisans de la rénovation au Maroc (MVP)."
+name: lamaalam
+description: "LAMAALAM – relevé, métré, devis et suivi de chantier (Groupe LAMAALAM)."
 publish_to: "none"
 version: 0.1.0+1
 
@@ -28,3 +28,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/logo_lamaalam_circle_512.png

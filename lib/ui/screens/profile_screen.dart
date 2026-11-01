@@ -81,31 +81,15 @@ class ProfileScreen extends StatelessWidget {
         ]),
         EditField(label: 'Mentions de bas de page', value: c.footer, maxLines: 3, onChanged: (v) => edit(() => c.footer = v)),
         const Divider(height: 32),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Réseau disponible'),
-          subtitle: const Text('Simulation : désactivez pour tester le travail hors connexion.'),
-          value: s.data.online,
-          onChanged: s.setOnline,
-        ),
-        const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
           OutlinedButton(
             onPressed: () async {
               final path = await s.store.exportFile(s.data);
               await SharePlus.instance.share(
-                ShareParams(files: [XFile(path, mimeType: 'application/json')], subject: 'Export Qiyas'),
+                ShareParams(files: [XFile(path, mimeType: 'application/json')], subject: 'Export LAMAALAM'),
               );
             },
             child: const Text('Exporter mes données'),
-          ),
-          OutlinedButton(
-            onPressed: () async {
-              if (await confirm(context, 'Recharger l\'exemple ?', 'Vos données actuelles seront remplacées par les données d\'exemple.', ok: 'Recharger')) {
-                await s.resetToSample();
-              }
-            },
-            child: const Text('Recharger les données d\'exemple'),
           ),
           TextButton(onPressed: s.signOut, child: const Text('Se déconnecter')),
         ]),

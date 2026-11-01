@@ -22,7 +22,7 @@ Future<void> main() async {
         Provider<AuthService>.value(value: FakeSmsAuthService()),
         Provider<LaserMeterService>.value(value: SimulatedLaserMeter()),
       ],
-      child: const QiyasApp(),
+      child: const LamaalamApp(),
     ),
   );
 }
