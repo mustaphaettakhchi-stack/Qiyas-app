@@ -1,5 +1,5 @@
-name: qiyas
-description: "Qiyas – relevé, métré et devis pour les artisans de la rénovation au Maroc (MVP)."
+name: lamaalam
+description: "LAMAALAM – relevé, métré, devis et suivi de chantier (Groupe LAMAALAM)."
 publish_to: "none"
 version: 0.1.0+1
 
@@ -20,6 +20,9 @@ dependencies:
   share_plus: ^13.3.1
   url_launcher: ^6.3.1
   uuid: ^4.5.1
+  crypto: ^3.0.8
+  dio: ^5.11.1
+  flutter_secure_storage: ^11.2.0
 
 dev_dependencies:
   flutter_test:
@@ -28,3 +31,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/logo_lamaalam_corrige_512.png
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
+    - assets/fonts/NotoSansArabic-Regular.ttf
+    - assets/fonts/NotoSansArabic-Bold.ttf

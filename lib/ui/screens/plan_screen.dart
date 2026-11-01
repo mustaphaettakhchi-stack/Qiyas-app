@@ -6,8 +6,21 @@ import 'package:provider/provider.dart';
 import '../../core/format.dart';
 import '../../data/app_state.dart';
 import '../../domain/calculations.dart';
+import '../../domain/geometry.dart';
 import '../../domain/models.dart';
 import '../widgets/common.dart';
+
+
+/// Contour d'une pièce dans le repère du plan (mètres, y vers le bas, origine au coin
+/// haut-gauche de sa boîte englobante), et dimensions de cette boîte.
+(List<Pt>, double, double) planShape(Room r) {
+  final shape = outline([for (final w in r.walls) w.length], [for (final w in r.walls) w.angle]);
+  if (shape.vertices.length < 3) return (const [], 0, 0);
+  final xs = shape.vertices.map((p) => p.x), ys = shape.vertices.map((p) => p.y);
+  final minX = xs.reduce(math.min), maxX = xs.reduce(math.max);
+  final minY = ys.reduce(math.min), maxY = ys.reduce(math.max);
+  return ([for (final v in shape.vertices) Pt(v.x - minX, maxY - v.y)], maxX - minX, maxY - minY);
+}
 
 /// E6 · Plan schématique coté : pièces juxtaposées à l'échelle, déplaçables au doigt.
 class PlanScreen extends StatefulWidget {
@@ -34,19 +47,20 @@ class _PlanScreenState extends State<PlanScreen> {
         r.planY = null;
       }
     }
-    final maxRow = math.max(9.0, p.rooms.fold<double>(0, (s, r) => math.max(s, r.length)));
+    final maxRow = math.max(9.0, p.rooms.fold<double>(0, (s, r) => math.max(s, planShape(r).$2)));
     double x = 0, y = 0, rowH = 0;
     for (final r in p.rooms) {
       if (r.planX != null && r.planY != null) continue;
-      if (x > 0 && x + r.length > maxRow) {
+      final (_, w, h) = planShape(r);
+      if (x > 0 && x + w > maxRow) {
         x = 0;
         y += rowH + _gap;
         rowH = 0;
       }
       r.planX = x;
       r.planY = y;
-      x += r.length + _gap;
-      rowH = math.max(rowH, r.width);
+      x += w + _gap;
+      rowH = math.max(rowH, h);
     }
   }
 
@@ -64,8 +78,11 @@ class _PlanScreenState extends State<PlanScreen> {
 
   Room? _hit(Project p, Offset pos) {
     for (final r in p.rooms.reversed) {
-      final rect = Rect.fromLTWH(_pad + (r.planX ?? 0.0) * _scale, _pad + (r.planY ?? 0.0) * _scale, r.length * _scale, r.width * _scale);
-      if (rect.contains(pos)) return r;
+      final (pts, _, _) = planShape(r);
+      if (pts.isEmpty) continue;
+      final ox = _pad + (r.planX ?? 0.0) * _scale, oy = _pad + (r.planY ?? 0.0) * _scale;
+      final path = Path()..addPolygon([for (final v in pts) Offset(ox + v.x * _scale, oy + v.y * _scale)], true);
+      if (path.contains(pos)) return r;
     }
     return null;
   }
@@ -75,8 +92,8 @@ class _PlanScreenState extends State<PlanScreen> {
     final s = context.watch<AppState>();
     final p = s.project(widget.projectId);
     if (p == null) return Scaffold(appBar: AppBar(), body: const Center(child: Text('Projet introuvable.')));
-    final maxX = p.rooms.fold<double>(6, (m, r) => math.max(m, (r.planX ?? 0.0) + r.length)) + 1;
-    final maxY = p.rooms.fold<double>(4, (m, r) => math.max(m, (r.planY ?? 0.0) + r.width)) + 1;
+    final maxX = p.rooms.fold<double>(6, (m, r) => math.max(m, (r.planX ?? 0.0) + planShape(r).$2)) + 1;
+    final maxY = p.rooms.fold<double>(4, (m, r) => math.max(m, (r.planY ?? 0.0) + planShape(r).$3)) + 1;
     final size = Size(maxX * _scale + _pad * 2, maxY * _scale + _pad * 2);
     final cs = Theme.of(context).colorScheme;
 
@@ -110,7 +127,7 @@ class _PlanScreenState extends State<PlanScreen> {
                   s.mutate(() {
                     r.planX = (r.planX! * 10).roundToDouble() / 10;
                     r.planY = (r.planY! * 10).roundToDouble() / 10;
-                  }, touch: p);
+                  }, touch: p, room: r);
                   setState(() => _dragging = null);
                 },
                 child: CustomPaint(size: size, painter: _PlanPainter(p.rooms, _scale, _pad, cs, _dragging?.id)),
@@ -125,7 +142,15 @@ class _PlanScreenState extends State<PlanScreen> {
             child: Wrap(spacing: 8, children: [
               OutlinedButton(onPressed: () => setState(() => _zoom = math.min(2.0, _zoom + 0.25)), child: const Text('Zoom +')),
               OutlinedButton(onPressed: () => setState(() => _zoom = math.max(0.5, _zoom - 0.25)), child: const Text('Zoom −')),
-              OutlinedButton(onPressed: () => s.mutate(() => autoLayout(p, reset: true), touch: p), child: const Text('Réorganiser')),
+              OutlinedButton(
+                onPressed: () => s.mutate(() {
+                  autoLayout(p, reset: true);
+                  for (final r in p.rooms) {
+                    r.markEdited();
+                  }
+                }, touch: p),
+                child: const Text('Réorganiser'),
+              ),
             ]),
           ),
         ),
@@ -172,21 +197,43 @@ class _PlanPainter extends CustomPainter {
     final cote = TextStyle(fontSize: 10, color: cs.tertiary);
 
     for (final r in rooms) {
-      final x = pad + (r.planX ?? 0.0) * scale, y = pad + (r.planY ?? 0.0) * scale;
-      final w = r.length * scale, h = r.width * scale;
-      final rect = Rect.fromLTWH(x, y, w, h);
-      canvas.drawRect(rect, r.id == activeId ? activeFill : fill);
-      canvas.drawRect(rect, wall);
-      if (r.windowCount > 0) canvas.drawLine(Offset(x + w * 0.3, y), Offset(x + w * 0.7, y), window);
-      if (r.doorCount > 0) {
-        final d = math.min(kDoorWidth * scale, w - 16);
-        canvas.drawLine(Offset(x + 8, y + h), Offset(x + 8 + d, y + h), doorGap);
-        canvas.drawArc(Rect.fromCircle(center: Offset(x + 8, y + h), radius: d), -math.pi / 2, math.pi / 2, false, doorArc);
+      final (pts, bw, bh) = planShape(r);
+      if (pts.isEmpty) continue;
+      final ox = pad + (r.planX ?? 0.0) * scale, oy = pad + (r.planY ?? 0.0) * scale;
+      Offset at(Pt v) => Offset(ox + v.x * scale, oy + v.y * scale);
+      final poly = [for (final v in pts) at(v)];
+      final path = Path()..addPolygon(poly, true);
+      canvas.drawPath(path, r.id == activeId ? activeFill : fill);
+      canvas.drawPath(path, wall);
+      final n = pts.length;
+      for (var i = 0; i < n && i < r.walls.length; i++) {
+        final a = poly[i], b = poly[(i + 1) % n];
+        final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+        final dir = b - a;
+        final len = dir.distance;
+        if (len < 1) continue;
+        final u = dir / len;
+        // Normale vers l'extérieur (le contour est parcouru avec l'intérieur à gauche).
+        final out = Offset(u.dy, -u.dx) * -12;
+        var angle = math.atan2(dir.dy, dir.dx);
+        if (angle > math.pi / 2 || angle < -math.pi / 2) angle += math.pi;
+        _text(canvas, fmt2(r.walls[i].length), mid + out, cote, angle: angle);
+        // Ouvertures du mur, centrées : fenêtre en trait épais, porte en arc.
+        for (final o in r.openings.where((o) => o.wallIndex == i)) {
+          final w = math.min(o.width * scale, len - 4);
+          final p1 = mid - u * (w / 2), p2 = mid + u * (w / 2);
+          if (o.type == OpeningType.window) {
+            canvas.drawLine(p1, p2, window);
+          } else {
+            canvas.drawLine(p1, p2, doorGap);
+            final inward = Offset(u.dy, -u.dx); // intérieur de la pièce (repère écran, y vers le bas)
+            canvas.drawLine(p1, p1 + inward * w, doorArc);
+          }
+        }
       }
-      _text(canvas, r.name, Offset(x + w / 2, y + h / 2 - 7), TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurface));
-      _text(canvas, '${fmt2(roomMeasures(r).floor)} m²', Offset(x + w / 2, y + h / 2 + 9), TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant));
-      _text(canvas, fmt2(r.length), Offset(x + w / 2, y - 9), cote);
-      _text(canvas, fmt2(r.width), Offset(x - 10, y + h / 2), cote, angle: -math.pi / 2);
+      final center = Offset(ox + bw * scale / 2, oy + bh * scale / 2);
+      _text(canvas, r.name, center - const Offset(0, 7), TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurface));
+      _text(canvas, '${fmt2(roomMeasures(r).floor)} m²', center + const Offset(0, 9), TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant));
     }
   }
 

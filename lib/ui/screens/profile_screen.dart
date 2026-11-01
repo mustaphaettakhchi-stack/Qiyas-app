@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/app_state.dart';
+import '../../session/session_controller.dart';
+import 'team_screen.dart';
 import '../widgets/common.dart';
 import '../widgets/photos.dart';
 
@@ -16,12 +18,33 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    final session = context.watch<SessionController>();
+    final me = session.user;
     final c = s.company;
     void edit(VoidCallback f) => s.mutate(f);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profil de l\'entreprise'), actions: const [SyncBadge()]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
+        if (me != null)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.account_circle_outlined),
+              title: Text(me.fullName),
+              subtitle: Text([
+                me.email,
+                me.roleLabel,
+                if (session.isDemo) 'démonstration sans serveur' else if (!session.verifiedOnline) 'hors connexion',
+              ].join(' · ')),
+            ),
+          ),
+        if (me != null && me.isAdmin && !session.isDemo)
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TeamScreen())),
+            icon: const Icon(Icons.group_outlined),
+            label: const Text('Équipe et invitations'),
+          ),
+        const SizedBox(height: 8),
         Row(children: [
           Container(
             width: 72,
@@ -81,33 +104,28 @@ class ProfileScreen extends StatelessWidget {
         ]),
         EditField(label: 'Mentions de bas de page', value: c.footer, maxLines: 3, onChanged: (v) => edit(() => c.footer = v)),
         const Divider(height: 32),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Réseau disponible'),
-          subtitle: const Text('Simulation : désactivez pour tester le travail hors connexion.'),
-          value: s.data.online,
-          onChanged: s.setOnline,
-        ),
-        const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
           OutlinedButton(
             onPressed: () async {
               final path = await s.store.exportFile(s.data);
               await SharePlus.instance.share(
-                ShareParams(files: [XFile(path, mimeType: 'application/json')], subject: 'Export Qiyas'),
+                ShareParams(files: [XFile(path, mimeType: 'application/json')], subject: 'Export LAMAALAM'),
               );
             },
             child: const Text('Exporter mes données'),
           ),
-          OutlinedButton(
+          TextButton(
             onPressed: () async {
-              if (await confirm(context, 'Recharger l\'exemple ?', 'Vos données actuelles seront remplacées par les données d\'exemple.', ok: 'Recharger')) {
-                await s.resetToSample();
+              final pending = s.pendingCount + s.data.conflicts.length;
+              if (await confirm(context, 'Se déconnecter ?',
+                  '${pending > 0 ? 'Attention : $pending fiche(s) ne sont pas encore envoyées au serveur. ' : ''}'
+                  'Les données saisies restent sur ce téléphone. Il faudra votre mot de passe et votre code pour revenir.',
+                  ok: 'Se déconnecter')) {
+                await session.logout();
               }
             },
-            child: const Text('Recharger les données d\'exemple'),
+            child: const Text('Se déconnecter'),
           ),
-          TextButton(onPressed: s.signOut, child: const Text('Se déconnecter')),
         ]),
       ]),
     );

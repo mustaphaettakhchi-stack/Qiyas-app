@@ -33,6 +33,9 @@ double? parseNum(String s) {
 String frDate(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
+/// "05/11/2026 à 09:30".
+String frDateTime(DateTime d) => '${frDate(d)} à ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
 /// Numéro marocain -> format international pour wa.me (212XXXXXXXXX).
 String waNumber(String phone) {
   var t = phone.replaceAll(RegExp(r'\D'), '');
@@ -41,3 +44,20 @@ String waNumber(String phone) {
   if (t.length == 9) t = '212$t';
   return t;
 }
+
+/// Montant exact au centime, avec sa devise : 2798895 -> "27 988,95 MAD" ; EUR -> "… €".
+/// À utiliser sur les devis : les montants affichés doivent correspondre exactement aux calculs.
+String money(int cents, String currency) {
+  final sign = cents < 0 ? '-' : '';
+  final a = cents.abs();
+  return '$sign${_group(a ~/ 100)},${(a % 100).toString().padLeft(2, '0')} ${currency == 'EUR' ? '€' : 'MAD'}';
+}
+
+/// Points de base -> pourcentage : 2000 -> "20 %", 750 -> "7,5 %".
+String pctBp(int bp) {
+  final s = (bp / 100).toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+  return '${s.replaceAll('.', ',')} %';
+}
+
+/// Taux de change × 10 000 -> "10,8500".
+String rateE4(int e4) => '${e4 ~/ 10000},${(e4 % 10000).toString().padLeft(4, '0')}';

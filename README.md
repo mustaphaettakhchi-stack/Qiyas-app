@@ -1,102 +1,119 @@
-# Qiyas – application Flutter (MVP)
+# LAMAALAM
 
-Qiyas transforme une visite de chantier en **plan coté, métré automatique et devis en dirhams**, prêt à envoyer par WhatsApp. Cible : artisans et petites entreprises de rénovation au Maroc.
+Application mobile de Groupe LAMAALAM (Tanger) : relevé de biens, métrés, devis, suivi de chantier et espace client. Android et iOS (Flutter), serveur auto-hébergeable (FastAPI + PostgreSQL), composants Open Source uniquement.
 
-Ce dépôt implémente les 10 écrans du cahier des charges du MVP, en version **« local d'abord »** : toutes les données restent sur le téléphone, et les services externes (SMS, synchronisation, télémètre) sont branchés derrière des interfaces, avec une implémentation de démonstration.
+Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 
-## Démarrer
+## État
 
-Prérequis : Flutter 3.41.6 ou plus récent (Dart 3.11+), Android Studio ou Xcode.
+| Élément | État |
+| --- | --- |
+| Phase 0 — audit et conception | Close (sauf décision D-06 sur l'hébergement) |
+| Serveur : comptes, rôles, invitations, double authentification, journal d'audit | Fait, testé (99 tests serveur au total, sur PostgreSQL) |
+| Application : relevé de pièces rectangulaires, métré, grille de prix, devis PDF, partage | Remplacé par les lots 1.3 à 1.6 (pièces de toute forme, métré validé, devis serveur) |
+| Application : charte LAMAALAM, logo, aucune donnée de démonstration | Fait |
+| Application : connexion au serveur, double authentification, invitation, gestion de l'équipe | Fait, testé de bout en bout contre le serveur réel |
+| Clients et projets partagés entre téléphones (synchronisation, conflits, références `LMA-AAAA-NNNN`) | Fait, testé de bout en bout (pièces, devis et bibliothèque synchronisés depuis ; les photos restent sur le téléphone sauf celles partagées dans l'espace client) |
+| Pièces de toute forme (mur par mur, angles), origine des cotes, contrôle de fermeture, plan, pièces synchronisées | Fait, testé (cas partagés application/serveur, bout en bout à deux téléphones) ; à valider sur 10 pièces réelles |
+| Métré par lot et par pièce, éléments comptés, perte affichée, validation du métré | Fait, testé (unitaires et bout en bout) |
+| Bibliothèque partagée (ouvrages, matériaux, fournisseurs), historique des prix, import CSV | Fait, testé ; démarre vide |
+| Devis : versions, validation, numérotation serveur, TVA par taux, MAD/EUR, prix calculés, PDF Unicode | Fait, testé ; mentions légales à valider par l'expert-comptable |
+| Tableau de bord (indicateurs, à faire, dernières opérations) | Fait, testé (indicateurs identiques à ceux du serveur) |
+| Espace client en lecture seule (devis envoyés, photos partagées, étapes, messages, non-lus) | Fait, testé (client A contre client B) ; test d'intrusion manuel et essai avec 2 clients réels à faire |
+| Exploitation : déploiement, sauvegarde chiffrée, restauration | Fait, exercice de restauration sur machine vierge à chaque modification (CI) ; **aucun hébergement en service (D-06)** |
+
+## Documentation
+
+| Document | Contenu |
+| --- | --- |
+| [`docs/PHASE0_DECISIONS.md`](docs/PHASE0_DECISIONS.md) | Audit, risques, décisions de Groupe LAMAALAM et réserves |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architecture technique |
+| [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) | Schéma de données cible |
+| [`docs/USER_FLOWS.md`](docs/USER_FLOWS.md) | Parcours et critères d'acceptation |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Phases et état d'avancement |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Installer un serveur et les téléphones |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Mettre à jour, revenir en arrière, surveiller |
+| [`docs/BACKUP.md`](docs/BACKUP.md) / [`docs/RESTORE.md`](docs/RESTORE.md) | Sauvegardes chiffrées, restauration, exercice mensuel |
+| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | Guide d'utilisation (équipe et clients) |
+| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Règles, tests, migrations, sécurité pour les développeurs |
+| [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md) | Rapport de tests de la phase 1 |
+| [`SECURITY.md`](SECURITY.md) | Sécurité et données personnelles |
+| [`OPEN_SOURCE_LICENSE_REGISTER.md`](OPEN_SOURCE_LICENSE_REGISTER.md) | Registre des licences |
+| [`assets/branding/README.md`](assets/branding/README.md) | Fichiers du logo et réserves |
+
+## Application mobile
+
+Prérequis : Flutter ≥ 3.41.6 (testé avec 3.47.9), Android Studio ou Xcode (Xcode impose un Mac).
 
 ```bash
-# 1. Générer les dossiers natifs (non versionnés)
-flutter create --platforms=android,ios --org ma.qiyas --project-name qiyas .
-rm -f test/widget_test.dart   # fichier d'exemple généré, inutile ici
+# Les dossiers natifs ne sont pas versionnés : les générer une fois
+flutter create --platforms=android,ios --org ma.grouplamaalam --project-name lamaalam .
+rm -f test/widget_test.dart
 
-# 2. Installer et lancer
 flutter pub get
+flutter analyze
 flutter test
-flutter run
+flutter run --dart-define=LAMAALAM_API_URL=https://api.exemple.ma
 ```
 
-**Connexion de démonstration** : n'importe quel numéro marocain valide (ex. 0661234567), puis le code `482913`.
+L'adresse du serveur peut aussi être saisie sur l'écran de connexion (« Adresse du serveur ») ; seules les adresses `https://` sont acceptées hors version de développement.
 
-### Permissions iOS
+Test de bout en bout application ↔ serveur (efface la base indiquée) :
 
-Ajouter dans `ios/Runner/Info.plist` :
+```bash
+LAMAALAM_TEST_DATABASE_URL=postgresql+psycopg://utilisateur:motdepasse@localhost:5432/lamaalam_test \
+  PYTHON=backend/.venv/bin/python tool/integration_test.sh
+```
+
+À chaque push sur `main`, GitHub Actions analyse et teste l'application, teste le serveur et construit deux APK Android de test (onglet **Actions**, artefact `lamaalam-apk-test`) : `lamaalam-serveur.apk`, qui exige un serveur, et `lamaalam-demonstration-sans-serveur.apk`, utilisable tant qu'aucun hébergement n'est en service.
+
+Permissions iOS à ajouter dans `ios/Runner/Info.plist` :
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>Qiyas utilise l'appareil photo pour joindre des photos du chantier à vos relevés.</string>
+<string>LAMAALAM utilise l'appareil photo pour joindre des photos du chantier à vos relevés.</string>
 <key>NSPhotoLibraryUsageDescription</key>
-<string>Qiyas accède à vos photos pour les joindre à vos relevés.</string>
+<string>LAMAALAM accède à vos photos pour les joindre à vos relevés.</string>
 ```
 
-Android ne demande aucune permission supplémentaire pour le MVP.
+## Serveur
 
-## APK de test
+```bash
+cd backend
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
 
-À chaque push sur `main`, GitHub Actions analyse le code, lance les tests et construit un APK Android de test. Il se télécharge dans l'onglet **Actions**, dernier passage, section **Artifacts** (`qiyas-debug-apk`). Le rapport détaillé est publié sur la branche `ci-results`.
-
-## Architecture
-
-```
-lib/
-  main.dart                  injection des services
-  app.dart                   thème, langue, porte d'entrée (connexion ou accueil)
-  domain/
-    models.dart              Entreprise, Prestation, Projet, Pièce, Ouverture, Devis, Ligne
-    calculations.dart        règles de calcul (fonctions pures, testées)
-  data/
-    app_state.dart           état central (ChangeNotifier) : chaque modification est sauvegardée
-    local_store.dart         stockage JSON + photos dans le dossier privé de l'app
-    sample_data.dart         données d'exemple et grilles modèles par métier
-  services/
-    auth_service.dart        connexion SMS (simulée)
-    sync_service.dart        synchronisation (locale uniquement pour l'instant)
-    laser_meter_service.dart télémètre Bluetooth (simulé)
-    pdf_service.dart         devis PDF A4, généré hors connexion
-    share_service.dart       partage du PDF et ouverture de WhatsApp
-  ui/
-    home_shell.dart          onglets Projets, Prix, Profil
-    screens/                 un fichier par écran du cahier des charges
-    widgets/                 champs, pastilles, photos
-test/
-  calculations_test.dart     cas de test de référence et règles de calcul
+# Tests : base PostgreSQL de test (elle est entièrement effacée à chaque lancement)
+export LAMAALAM_TEST_DATABASE_URL=postgresql+psycopg://utilisateur:motdepasse@localhost:5432/lamaalam_test
+python -m pytest -q
 ```
 
-| Écran | Fichier |
+Déploiement (aucun hébergement n'est encore validé, décision D-06) : [`docs/INSTALLATION.md`](docs/INSTALLATION.md), puis `deploy/deploy.sh`. Sauvegardes : [`docs/BACKUP.md`](docs/BACKUP.md).
+
+## Organisation du code
+
+```
+lib/                     application Flutter (héritée de Qiyas, refonte modulaire prévue au lot 1.0)
+  domain/                modèles et calculs de métré et de devis (fonctions pures, testées)
+  data/                  état, stockage local, modèles de prestations (sans prix)
+  session/               connexion au serveur : client API, jetons (stockage sécurisé), état de session
+  services/              PDF, partage, télémètre (non branché)
+  ui/                    écrans
+test/                    tests Flutter ; test/support : données de référence réservées aux tests
+backend/
+  app/                   API FastAPI : config, modèles, sécurité, routes
+  migrations/            migrations Alembic
+  tests/                 tests sur PostgreSQL réel
+deploy/                  Caddyfile, rôle applicatif PostgreSQL, scripts deploy / backup / restore
+tool/                    test de bout en bout, exercice de restauration
+assets/branding/         logo original et variantes
+docker-compose.yml       pile serveur
+```
+
+## Ce qui est encore simulé dans l'application
+
+| Fonction | État |
 | --- | --- |
-| E1 Inscription et connexion | `ui/screens/login_screen.dart` |
-| E2 Profil de l'entreprise | `ui/screens/profile_screen.dart` |
-| E3 Liste des projets | `ui/screens/projects_screen.dart` |
-| E4 Fiche projet | `ui/screens/project_screen.dart` |
-| E5 Saisie d'une pièce | `ui/screens/room_screen.dart` |
-| E6 Plan | `ui/screens/plan_screen.dart` |
-| E7 Métré | `ui/screens/metre_screen.dart` |
-| E8 Grille de prix | `ui/screens/prices_screen.dart` |
-| E9 Édition du devis | `ui/screens/quote_screen.dart` |
-| E10 Aperçu PDF et partage | `ui/screens/preview_screen.dart` |
-
-## Cas de test de référence
-
-Projet d'exemple « M. Benali », 5 pièces : sol 51,66 m², murs nets 163,03 m², plinthes 60,08 ml. Devis peinture murs 45, peinture plafond 50, carrelage 280, plinthes 60 MAD : **27 989 MAD HT, 5 598 MAD de TVA, 33 587 MAD TTC**. Vérifié par `test/calculations_test.dart`.
-
-## Ce qui est simulé
-
-| Fonction | État | Pour la rendre réelle |
-| --- | --- | --- |
-| SMS de connexion | Code fixe `482913` | Implémenter `AuthService` avec le fournisseur SMS retenu |
-| Synchronisation | Aucune donnée ne quitte le téléphone ; interrupteur « Réseau disponible » dans le profil | Implémenter `SyncService` (Firebase, Supabase ou API maison) |
-| Numérotation des devis | Compteur local | Réserve de 20 numéros par appareil attribuée par le serveur |
-| Télémètre Bluetooth | Mesure générée | Implémenter `LaserMeterService` (ex. `flutter_blue_plus`) selon le modèle retenu |
-| Envoi WhatsApp | Réel : menu de partage du PDF, ou conversation WhatsApp avec le texte | — |
-
-## Reste à faire avant le lancement
-
-- Embarquer une police Unicode (Noto Sans et Noto Sans Arabic) dans le PDF : la police intégrée ne couvre que l'alphabet latin, un nom de client en arabe ne s'afficherait pas.
-- Externaliser les textes dans des fichiers ARB (`flutter gen-l10n`) pour préparer l'arabe et la darija.
-- Brancher le backend, le fournisseur SMS et le télémètre (questions ouvertes du cahier des charges).
-- Valider les mentions légales du devis avec un expert-comptable.
-- Tester sur un Android d'entrée de gamme (3 Go de RAM) : temps d'ouverture et génération du PDF.
-- Déclaration CNDP, icône et nom de l'application, publication en accès anticipé.
+| Connexion | Réelle (serveur LAMAALAM). Une version « démonstration sans serveur » n'existe que si elle est compilée avec `--dart-define=LAMAALAM_DEMO=true` ; elle l'affiche en clair |
+| Synchronisation | Réelle (clients, projets, pièces, devis, bibliothèque) ; la version « démonstration sans serveur » affiche « Sur ce téléphone » |
+| Télémètre Bluetooth | Non branché ; le bouton de mesure simulée est masqué pour ne jamais produire de cote inventée (décision D-02) |

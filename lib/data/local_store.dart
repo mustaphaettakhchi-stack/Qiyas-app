@@ -8,13 +8,17 @@ import '../domain/models.dart';
 /// Stockage local en fichier JSON dans le dossier privé de l'application.
 /// Les photos sont copiées dans un sous-dossier « photos ».
 class LocalStore {
-  static const _fileName = 'qiyas_data.json';
+  static const _fileName = 'lamaalam_data.json';
+  static const _legacyFileName = 'qiyas_data.json';
 
   Future<Directory> _dir() => getApplicationDocumentsDirectory();
 
   Future<AppData?> load() async {
     try {
-      final f = File('${(await _dir()).path}/$_fileName');
+      final dir = (await _dir()).path;
+      var f = File('$dir/$_fileName');
+      // Reprise des données saisies avec l'ancienne version Qiyas de l'application.
+      if (!await f.exists()) f = File('$dir/$_legacyFileName');
       if (!await f.exists()) return null;
       final json = jsonDecode(await f.readAsString());
       return AppData.fromJson(Map<String, dynamic>.from(json as Map));
@@ -49,7 +53,7 @@ class LocalStore {
   /// Exporte toutes les données dans un fichier JSON (droit d'accès, loi 09-08).
   Future<String> exportFile(AppData data) async {
     final dir = await getTemporaryDirectory();
-    final f = File('${dir.path}/qiyas_export_${DateTime.now().millisecondsSinceEpoch}.json');
+    final f = File('${dir.path}/lamaalam_export_${DateTime.now().millisecondsSinceEpoch}.json');
     await f.writeAsString(const JsonEncoder.withIndent('  ').convert(data.toJson()));
     return f.path;
   }

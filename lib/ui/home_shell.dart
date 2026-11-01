@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'screens/prices_screen.dart';
+import 'screens/clients_screen.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/library_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/projects_screen.dart';
 
-/// Navigation principale : Projets (E3), Prix (E8), Profil (E2).
+/// Navigation principale : Accueil, Projets, Clients, Bibliothèque, Profil.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -17,13 +19,15 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: IndexedStack(index: _index, children: const [ProjectsScreen(), PricesScreen(), ProfileScreen()]),
+        body: IndexedStack(index: _index, children: const [DashboardScreen(), ProjectsScreen(), ClientsScreen(), LibraryScreen(), ProfileScreen()]),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
           destinations: const [
+            NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Accueil'),
             NavigationDestination(icon: Icon(Icons.folder_outlined), selectedIcon: Icon(Icons.folder), label: 'Projets'),
-            NavigationDestination(icon: Icon(Icons.sell_outlined), selectedIcon: Icon(Icons.sell), label: 'Prix'),
+            NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Clients'),
+            NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Bibliothèque'),
             NavigationDestination(icon: Icon(Icons.business_outlined), selectedIcon: Icon(Icons.business), label: 'Profil'),
           ],
         ),

@@ -28,36 +28,42 @@ class PreviewScreen extends StatelessWidget {
     }
     final q = found;
     final c = s.company;
-    final message = quoteMessage(c, p, q);
+    final client = s.clientOf(p);
+    final phone = client?.phone ?? '';
+    final message = quoteMessage(c, p, q, client: client);
+
+    // Seul un devis validé et numéroté par le serveur peut partir chez le client.
+    final canSend = q.status != QuoteStatus.draft && q.status != QuoteStatus.superseded && (q.number != null || q.legacy);
+    final fileName = '${q.displayNumber.replaceAll(' ', '_')}.pdf';
 
     Future<void> sendPdf() async {
-      final bytes = await PdfService.build(company: c, project: p, quote: q);
-      final shared = await ShareService.sharePdf(bytes, '${q.number}.pdf', message);
-      if (shared && q.status == QuoteStatus.draft) {
+      final bytes = await PdfService.build(company: c, project: p, quote: q, client: client);
+      final shared = await ShareService.sharePdf(bytes, fileName, message);
+      if (shared && q.status == QuoteStatus.validated) {
         s.markSent(p, q);
-        if (context.mounted) showToast(context, 'Devis envoyé : il est maintenant figé.');
+        if (context.mounted) showToast(context, 'Devis marqué comme envoyé.');
       }
     }
 
     Future<void> openWhatsApp() async {
-      final ok = await ShareService.openWhatsApp(p.phone, message);
+      final ok = await ShareService.openWhatsApp(phone, message);
       if (!ok && context.mounted) {
         showToast(context, 'Numéro du client manquant ou WhatsApp indisponible.');
       }
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(q.number), actions: [Padding(padding: const EdgeInsets.only(right: 12), child: StatusPill(q.status))]),
+      appBar: AppBar(title: Text(q.displayNumber), actions: [Padding(padding: const EdgeInsets.only(right: 12), child: StatusPill(q.status))]),
       body: Column(children: [
         Expanded(
           child: PdfPreview(
-            build: (_) => PdfService.build(company: c, project: p, quote: q),
+            build: (_) => PdfService.build(company: c, project: p, quote: q, client: client),
             canChangePageFormat: false,
             canChangeOrientation: false,
             canDebug: false,
             allowPrinting: false,
             allowSharing: false,
-            pdfFileName: '${q.number}.pdf',
+            pdfFileName: fileName,
           ),
         ),
         SafeArea(
@@ -65,46 +71,28 @@ class PreviewScreen extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              FilledButton.icon(
-                onPressed: sendPdf,
-                icon: const Icon(Icons.send),
-                label: const Text('Envoyer le PDF (WhatsApp, e-mail…)'),
-              ),
-              const SizedBox(height: 6),
-              OutlinedButton.icon(
-                onPressed: p.phone.isEmpty ? null : openWhatsApp,
-                icon: const Icon(Icons.chat_outlined),
-                label: const Text('Écrire au client sur WhatsApp'),
-              ),
-              const SizedBox(height: 6),
-              if (q.status == QuoteStatus.draft)
-                TextButton(onPressed: () => s.markSent(p, q), child: const Text('Marquer comme envoyé'))
-              else
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: q.status == QuoteStatus.accepted
-                          ? null
-                          : () {
-                              s.setStatus(p, q, QuoteStatus.accepted);
-                              showToast(context, 'Bravo, chantier gagné.');
-                            },
-                      child: const Text('Accepté'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: q.status == QuoteStatus.refused
-                          ? null
-                          : () {
-                              s.setStatus(p, q, QuoteStatus.refused);
-                              showToast(context, 'Devis refusé. Créez une nouvelle version depuis l\'écran Devis.');
-                            },
-                      child: const Text('Refusé'),
-                    ),
-                  ),
-                ]),
+              if (!canSend)
+                AlertBox(
+                  q.status == QuoteStatus.draft
+                      ? 'Aperçu d\'un brouillon (filigrane) : validez le devis pour pouvoir l\'envoyer.'
+                      : q.status == QuoteStatus.superseded
+                          ? 'Version remplacée : elle ne peut plus être envoyée.'
+                          : 'Le numéro du devis n\'est pas encore attribué : synchronisez avant l\'envoi.',
+                  kind: AlertKind.warning,
+                )
+              else ...[
+                FilledButton.icon(
+                  onPressed: sendPdf,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Envoyer le PDF (WhatsApp, e-mail…)'),
+                ),
+                const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  onPressed: phone.isEmpty ? null : openWhatsApp,
+                  icon: const Icon(Icons.chat_outlined),
+                  label: const Text('Écrire au client sur WhatsApp'),
+                ),
+              ],
             ]),
           ),
         ),

@@ -1,0 +1,73 @@
+# Pile serveur LAMAALAM — voir docs/ARCHITECTURE.md §2.
+# Usage : cp .env.example .env ; éditer .env ; docker compose up -d
+# Aucun service payant ; l'hébergement reste à valider (décision D-06).
+# Exploitation : docs/DEPLOYMENT.md, docs/BACKUP.md, docs/RESTORE.md (scripts dans deploy/).
+
+# Nom fixe : les volumes s'appellent lamaalam_db-data, lamaalam_files-data… quel que soit
+# le dossier d'installation (les scripts de sauvegarde et de restauration en dépendent).
+name: lamaalam
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lamaalam
+      POSTGRES_USER: lamaalam_owner
+      POSTGRES_PASSWORD: ${LAMAALAM_OWNER_DB_PASSWORD:?à définir dans .env}
+      LAMAALAM_APP_DB_PASSWORD: ${LAMAALAM_APP_DB_PASSWORD:?à définir dans .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./deploy/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lamaalam_owner -d lamaalam"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    build: ./backend
+    image: lamaalam-api:local
+    command: ["alembic", "upgrade", "head"]
+    # Mêmes réglages que l'API, mais avec le rôle propriétaire de la base : sert aussi aux
+    # commandes d'exploitation (deploy/restore.sh).
+    env_file: ${LAMAALAM_ENV_FILE:-.env}
+    environment:
+      LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam_owner:${LAMAALAM_OWNER_DB_PASSWORD}@db:5432/lamaalam
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: lamaalam-api:local
+    restart: unless-stopped
+    # .env par défaut ; LAMAALAM_ENV_FILE permet un autre fichier (exercice de restauration).
+    env_file: ${LAMAALAM_ENV_FILE:-.env}
+    environment:
+      LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam_app:${LAMAALAM_APP_DB_PASSWORD}@db:5432/lamaalam
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      # Photos partagées et PDF de devis (lot 1.8) : le reste du système de fichiers
+      # du conteneur est en lecture seule.
+      - files-data:/var/lib/lamaalam/files
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      LAMAALAM_DOMAIN: ${LAMAALAM_DOMAIN:?à définir dans .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [api]
+
+volumes:
+  db-data:
+  files-data:
+  caddy-data:

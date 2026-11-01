@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
+import '../../core/labels.dart';
 import '../../data/app_state.dart';
 import '../../domain/calculations.dart';
+import '../../session/session_controller.dart';
 import '../widgets/common.dart';
 import '../widgets/photos.dart';
+import 'client_share_screen.dart';
+import 'clients_screen.dart';
 import 'metre_screen.dart';
 import 'plan_screen.dart';
 import 'quote_screen.dart';
@@ -24,6 +28,8 @@ class ProjectScreen extends StatelessWidget {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text('Projet introuvable.')));
     }
     void edit(VoidCallback f) => s.mutate(f, touch: p);
+    void meta(VoidCallback f) => s.mutate(f, touch: p, meta: true);
+    final client = s.clientOf(p);
     final m = projectMeasures(p);
     final hasRooms = p.rooms.isNotEmpty;
 
@@ -55,18 +61,106 @@ class ProjectScreen extends StatelessWidget {
         ],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
+        if (p.syncError != null) ...[AlertBox('Envoi refusé : ${p.syncError}', kind: AlertKind.error), const SizedBox(height: 8)],
+        Text(p.reference ?? 'Référence attribuée à la première synchronisation', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 4),
+        Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: Text(s.clientName(p)),
+            subtitle: Text(client == null
+                ? 'Touchez pour choisir le client'
+                : [client.phone, client.city].where((x) => x.isNotEmpty).join(' · ')),
+            trailing: TextButton(
+              onPressed: () async {
+                final id = await pickClient(context);
+                if (id != null) meta(() => p.clientId = id);
+              },
+              child: const Text('Changer'),
+            ),
+            onTap: client == null
+                ? () async {
+                    final id = await pickClient(context);
+                    if (id != null) meta(() => p.clientId = id);
+                  }
+                : () => open(ClientScreen(clientId: client.id)),
+          ),
+        ),
+        if (!context.watch<SessionController>().isDemo)
+          Card(
+            margin: const EdgeInsets.only(top: 8),
+            child: ListTile(
+              leading: const Icon(Icons.visibility_outlined),
+              title: const Text('Espace client'),
+              subtitle: const Text('Photos partagées, devis publiés, messages'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => open(ClientShareScreen(projectId: p.id)),
+            ),
+          ),
+        EditField(key: ValueKey('name-${p.id}'), label: 'Nom du projet (facultatif)', value: p.name, onChanged: (v) => meta(() => p.name = v)),
+        _Choice(
+          label: 'Nature des travaux',
+          value: p.projectType,
+          options: kProjectTypes,
+          onChanged: (v) => meta(() => p.projectType = v!),
+        ),
+        _Choice(
+          label: 'Type de bien',
+          value: p.propertyKind,
+          options: kPropertyKinds,
+          allowEmpty: true,
+          onChanged: (v) => meta(() => p.propertyKind = v),
+        ),
+        _Choice(
+          label: 'Statut',
+          value: p.status,
+          options: kProjectStatuses,
+          onChanged: (v) => meta(() => p.status = v!),
+        ),
+        EditField(key: ValueKey('addr-${p.id}'), label: 'Adresse du chantier', value: p.address, onChanged: (v) => meta(() => p.address = v)),
+        EditField(key: ValueKey('city-${p.id}'), label: 'Ville', value: p.city, onChanged: (v) => meta(() => p.city = v)),
         Row(children: [
-          Expanded(child: EditField(key: ValueKey('client-${p.id}'), label: 'Client', value: p.client, onChanged: (v) => edit(() => p.client = v))),
+          Expanded(
+            child: NumField(
+              label: 'Budget estimatif',
+              suffix: p.currency,
+              decimals: 0,
+              value: (p.budgetCents ?? 0) / 100,
+              onChanged: (v) => meta(() => p.budgetCents = v <= 0 ? null : (v * 100).round()),
+            ),
+          ),
           const SizedBox(width: 12),
-          Expanded(child: EditField(key: ValueKey('tel-${p.id}'), label: 'Téléphone', value: p.phone, keyboardType: TextInputType.phone, onChanged: (v) => edit(() => p.phone = v))),
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.event_outlined),
+              label: Text(p.visitDate == null ? 'Date de visite' : 'Visite : ${frDate(p.visitDate!)}'),
+              onPressed: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: p.visitDate ?? DateTime.now(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2100),
+                );
+                if (d != null) meta(() => p.visitDate = d);
+              },
+            ),
+          ),
         ]),
-        EditField(key: ValueKey('addr-${p.id}'), label: 'Adresse du chantier', value: p.address, onChanged: (v) => edit(() => p.address = v)),
-        EditField(key: ValueKey('city-${p.id}'), label: 'Ville', value: p.city, onChanged: (v) => edit(() => p.city = v)),
-        EditField(key: ValueKey('notes-${p.id}'), label: 'Notes', value: p.notes, maxLines: 3, onChanged: (v) => edit(() => p.notes = v)),
+        EditField(key: ValueKey('desc-${p.id}'), label: 'Description des travaux', value: p.description, maxLines: 3, onChanged: (v) => meta(() => p.description = v)),
+        EditField(key: ValueKey('notes-${p.id}'), label: 'Notes', value: p.notes, maxLines: 3, onChanged: (v) => meta(() => p.notes = v)),
+        const SizedBox(height: 8),
+        const AlertBox('Photos enregistrées sur ce téléphone uniquement ; seules celles partagées dans l\'espace client '
+            'sont envoyées au serveur.'),
         SectionHeader(
           'Photos du chantier',
           trailing: TextButton.icon(
             onPressed: () async {
+              // Photos du domicile d'un client : consentement préalable obligatoire (USER_FLOWS A2.4).
+              if (client == null || !client.hasConsent) {
+                showToast(context, 'Recueillez d\'abord le consentement du client sur sa fiche.');
+                return;
+              }
               final paths = await pickPhotos(context);
               if (paths.isNotEmpty) edit(() => p.photoPaths.addAll(paths));
             },
@@ -121,7 +215,7 @@ class ProjectScreen extends StatelessWidget {
           for (final q in p.quotes.reversed)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(q.number),
+              title: Text(q.displayNumber),
               subtitle: Text(frDate(q.date)),
               trailing: StatusPill(q.status),
               onTap: () => open(QuoteScreen(projectId: p.id, quoteId: q.id)),
@@ -130,4 +224,36 @@ class ProjectScreen extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// Liste de choix compacte.
+class _Choice extends StatelessWidget {
+  const _Choice({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.allowEmpty = false,
+  });
+
+  final String label;
+  final String? value;
+  final Map<String, String> options;
+  final ValueChanged<String?> onChanged;
+  final bool allowEmpty;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: DropdownButtonFormField<String?>(
+          initialValue: value,
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: [
+            if (allowEmpty) const DropdownMenuItem<String?>(value: null, child: Text('Non précisé')),
+            for (final e in options.entries) DropdownMenuItem<String?>(value: e.key, child: Text(e.value)),
+          ],
+          onChanged: onChanged,
+        ),
+      );
 }

@@ -1,0 +1,47 @@
+{
+  "_description": "Cas de calcul de devis partagés entre l'application (test/shared_cases_test.dart) et le serveur (backend/tests/test_quotes.py). Montants en centimes, taux en points de base (2000 = 20 %). Arrondis : au centime le plus proche, la moitié vers le haut. Résultats calculés à la main.",
+  "cases": [
+    {
+      "name": "Devis de référence (projet de 5 pièces, TVA 20 %, acompte 30 %)",
+      "discount_bp": 0, "overhead_bp": 0, "margin_bp": 0, "deposit_bp": 3000,
+      "lines": [
+        {"quantity": 163.03, "pricing": "direct", "unit_price_cents": 4500, "vat_rate_bp": 2000},
+        {"quantity": 51.66, "pricing": "direct", "unit_price_cents": 5000, "vat_rate_bp": 2000},
+        {"quantity": 51.66, "pricing": "direct", "unit_price_cents": 28000, "vat_rate_bp": 2000},
+        {"quantity": 60.08, "pricing": "direct", "unit_price_cents": 6000, "vat_rate_bp": 2000}
+      ],
+      "expected": {"line_totals": [733635, 258300, 1446480, 360480], "subtotal": 2798895, "discount": 0, "ht": 2798895,
+                   "vat": {"2000": 559779}, "vat_total": 559779, "ttc": 3358674, "deposit": 1007602}
+    },
+    {
+      "name": "Trois taux de TVA et remise de 5 % répartie par taux",
+      "discount_bp": 500, "overhead_bp": 0, "margin_bp": 0, "deposit_bp": 4000,
+      "lines": [
+        {"quantity": 10, "pricing": "direct", "unit_price_cents": 10000, "vat_rate_bp": 2000},
+        {"quantity": 5, "pricing": "direct", "unit_price_cents": 3333, "vat_rate_bp": 1000},
+        {"quantity": 1, "pricing": "direct", "unit_price_cents": 99999, "vat_rate_bp": 0}
+      ],
+      "expected": {"line_totals": [100000, 16665, 99999], "subtotal": 216664, "discount": 10833, "ht": 205831,
+                   "vat": {"0": 0, "1000": 1583, "2000": 19000}, "vat_total": 20583, "ttc": 226414, "deposit": 90566}
+    },
+    {
+      "name": "Prix calculé : (fournitures 80 + main-d'œuvre 40) × frais 10 % × marge 15 %",
+      "discount_bp": 0, "overhead_bp": 1000, "margin_bp": 1500, "deposit_bp": 3000,
+      "lines": [
+        {"quantity": 2.5, "pricing": "cost_plus", "material_cost_cents": 8000, "labour_cost_cents": 4000, "vat_rate_bp": 2000}
+      ],
+      "expected": {"unit_prices": [15180], "line_totals": [37950], "subtotal": 37950, "discount": 0, "ht": 37950,
+                   "vat": {"2000": 7590}, "vat_total": 7590, "ttc": 45540, "deposit": 13662}
+    },
+    {
+      "name": "Arrondi d'une quantité non représentable exactement (1,005 → 1,00)",
+      "discount_bp": 0, "overhead_bp": 0, "margin_bp": 0, "deposit_bp": 0,
+      "lines": [
+        {"quantity": 1.005, "pricing": "direct", "unit_price_cents": 19900, "vat_rate_bp": 2000},
+        {"quantity": 0.5, "pricing": "direct", "unit_price_cents": 1, "vat_rate_bp": 2000}
+      ],
+      "expected": {"line_totals": [19900, 1], "subtotal": 19901, "discount": 0, "ht": 19901,
+                   "vat": {"2000": 3980}, "vat_total": 3980, "ttc": 23881, "deposit": 0}
+    }
+  ]
+}

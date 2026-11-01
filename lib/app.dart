@@ -4,26 +4,70 @@ import 'package:provider/provider.dart';
 
 import 'data/app_state.dart';
 import 'ui/home_shell.dart';
-import 'ui/screens/login_screen.dart';
+import 'session/session_controller.dart';
+import 'ui/screens/auth/login_screen.dart';
+import 'ui/screens/client/client_home_screen.dart';
 
-const _cobalt = Color(0xFF2C4BB0);
+/// Charte Groupe LAMAALAM (docs/ARCHITECTURE.md §8).
+abstract final class Brand {
+  static const black = Color(0xFF151515);
+  static const blackSecondary = Color(0xFF222222);
+  static const orange = Color(0xFFF28C00);
+  static const orangeBright = Color(0xFFFF9D19);
+  static const white = Color(0xFFFFFFFF);
+  static const lightGrey = Color(0xFFF2F2F2);
+  static const technicalGrey = Color(0xFF777777);
 
-ThemeData _theme(Brightness b) {
-  final scheme = ColorScheme.fromSeed(seedColor: _cobalt, brightness: b);
+  /// Texte secondaire. Le gris technique #777777 n'atteint que 4,08:1 sur #151515
+  /// (minimum WCAG AA : 4,5:1) : il est réservé aux bordures et éléments décoratifs.
+  /// Écart à faire valider par Groupe LAMAALAM.
+  static const secondaryText = Color(0xFFB3B3B3);
+}
+
+ThemeData lamaalamTheme() {
+  // Texte noir sur orange (7,41:1) : le blanc sur orange n'atteint que 2,46:1.
+  const scheme = ColorScheme(
+    brightness: Brightness.dark,
+    primary: Brand.orange,
+    onPrimary: Brand.black,
+    primaryContainer: Brand.orangeBright,
+    onPrimaryContainer: Brand.black,
+    secondary: Brand.orangeBright,
+    onSecondary: Brand.black,
+    error: Color(0xFFFF6B5E),
+    onError: Brand.black,
+    surface: Brand.black,
+    onSurface: Brand.white,
+    surfaceContainerLowest: Brand.black,
+    surfaceContainerLow: Brand.blackSecondary,
+    surfaceContainer: Brand.blackSecondary,
+    surfaceContainerHigh: Color(0xFF2A2A2A),
+    surfaceContainerHighest: Color(0xFF333333),
+    onSurfaceVariant: Brand.secondaryText,
+    outline: Brand.technicalGrey,
+    outlineVariant: Color(0xFF3A3A3A),
+    inverseSurface: Brand.lightGrey,
+    onInverseSurface: Brand.black,
+    inversePrimary: Color(0xFFB36800),
+  );
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
+    scaffoldBackgroundColor: Brand.black,
     visualDensity: VisualDensity.standard,
+    appBarTheme: const AppBarTheme(backgroundColor: Brand.black, foregroundColor: Brand.white),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
+      fillColor: Brand.blackSecondary,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       isDense: false,
     ),
-    // Boutons d'au moins 48 points de haut (exigence d'ergonomie du cahier des charges).
-    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size(48, 48))),
-    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48))),
+    // Boutons d'au moins 48 points de haut (usage à une main sur chantier).
+    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size(48, 52))),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 52))),
     cardTheme: CardThemeData(
       elevation: 0,
+      color: Brand.blackSecondary,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: scheme.outlineVariant),
@@ -32,17 +76,19 @@ ThemeData _theme(Brightness b) {
   );
 }
 
-class QiyasApp extends StatelessWidget {
-  const QiyasApp({super.key});
+class LamaalamApp extends StatelessWidget {
+  const LamaalamApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    final session = context.watch<SessionController>();
     return MaterialApp(
-      title: 'Qiyas',
+      title: 'LAMAALAM',
       debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
+      // Thème sombre unique pour l'instant : un thème clair à fort contraste (plein soleil)
+      // est prévu, l'orange sur blanc (2,46:1) ne pouvant pas servir de couleur de texte.
+      theme: lamaalamTheme(),
       locale: const Locale('fr'),
       supportedLocales: const [Locale('fr')],
       localizationsDelegates: const [
@@ -50,9 +96,12 @@ class QiyasApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: !s.loaded
+      home: !s.loaded || !session.restored
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : (s.data.authenticated ? const HomeShell() : const LoginScreen()),
+          : !session.isAuthenticated
+              ? const LoginScreen()
+              // Un compte client n'accède qu'à son espace en lecture seule (USER_FLOWS P8).
+              : (session.isDemo || session.user!.isStaff ? const HomeShell() : const ClientHomeScreen()),
     );
   }
 }

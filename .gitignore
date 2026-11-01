@@ -31,3 +31,9 @@ ios/Runner.xcworkspace/xcuserdata/
 **/DerivedData/
 
 .DS_Store
+
+# Secrets serveur
+.env
+__pycache__/
+*.pyc
+.pytest_cache/

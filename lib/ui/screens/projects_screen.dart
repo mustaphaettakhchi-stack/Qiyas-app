@@ -6,6 +6,7 @@ import '../../data/app_state.dart';
 import '../../domain/calculations.dart';
 import '../../domain/models.dart';
 import '../widgets/common.dart';
+import 'clients_screen.dart';
 import 'project_screen.dart';
 
 /// E3 · Liste des projets (accueil).
@@ -31,7 +32,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   String _query = '';
   _Filter _filter = _Filter.all;
 
-  bool _matches(Project p) {
+  bool _matches(AppState s, Project p) {
     final st = p.lastQuote?.status;
     final okFilter = switch (_filter) {
       _Filter.all => true,
@@ -42,27 +43,29 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       _Filter.refused => st == QuoteStatus.refused,
     };
     final q = _query.trim().toLowerCase();
-    final okQuery = q.length < 3 || '${p.client} ${p.city}'.toLowerCase().contains(q);
+    final okQuery = q.length < 3 || '${s.clientName(p)} ${p.name} ${p.city} ${p.reference ?? ''}'.toLowerCase().contains(q);
     return okFilter && okQuery;
   }
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
-    final list = s.activeProjects.where(_matches).toList();
+    final list = s.activeProjects.where((p) => _matches(s, p)).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Projets'), actions: const [SyncBadge()]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          final p = s.createProject();
-          Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectScreen(projectId: p.id)));
+        onPressed: () async {
+          final clientId = await pickClient(context);
+          if (clientId == null || !context.mounted) return;
+          final p = s.createProject(clientId: clientId);
+          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ProjectScreen(projectId: p.id)));
         },
         icon: const Icon(Icons.add),
         label: const Text('Nouveau projet'),
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), children: [
         TextField(
-          decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Rechercher un client (3 lettres min.)'),
+          decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Client, projet, ville ou référence (3 lettres min.)'),
           onChanged: (v) => setState(() => _query = v),
         ),
         const SizedBox(height: 8),
@@ -73,21 +76,22 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         const SizedBox(height: 8),
         if (list.isEmpty)
           const AlertBox('Aucun projet ne correspond. Créez votre premier relevé avec le bouton « Nouveau projet ».'),
-        for (final p in list) _ProjectCard(p: p, vat: s.company.vatPercent),
+        for (final p in list) _ProjectCard(p: p, vat: s.company.vatPercent, clientName: s.clientName(p)),
       ]),
     );
   }
 }
 
 class _ProjectCard extends StatelessWidget {
-  const _ProjectCard({required this.p, required this.vat});
+  const _ProjectCard({required this.p, required this.vat, required this.clientName});
   final Project p;
   final double vat;
+  final String clientName;
 
   @override
   Widget build(BuildContext context) {
     final q = p.lastQuote;
-    final ttc = q == null ? null : quoteTotals(p, q, vat).ttc;
+    final totals = q == null ? null : quoteTotals(p, q);
     final t = Theme.of(context).textTheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -98,18 +102,18 @@ class _ProjectCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text(p.client.isEmpty ? 'Client à renseigner' : p.client, style: t.titleMedium)),
+              Expanded(child: Text(clientName, style: t.titleMedium)),
               StatusPill(q?.status),
             ]),
             const SizedBox(height: 4),
             Row(children: [
               Expanded(
                 child: Text(
-                  '${p.city} · ${frDate(p.updatedAt)}${p.synced ? '' : ' · non synchronisé'}',
+                  [p.reference ?? 'Réf. à l\'envoi', p.city, frDate(p.updatedAt)].where((x) => x.isNotEmpty).join(' · '),
                   style: t.bodySmall,
                 ),
               ),
-              Text(ttc == null ? '—' : '${dh(ttc)} TTC', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+              Text(totals == null ? '—' : '${money(totals.ttc, q!.currency)} TTC', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
             ]),
           ]),
         ),

@@ -1,0 +1,40 @@
+{
+  "_description": "Cas de métré partagés entre l'application (test/shared_cases_test.dart) et le serveur (backend/tests/test_geometry.py). Résultats attendus calculés à la main ; tolérance 1e-6.",
+  "cases": [
+    {
+      "name": "Rectangle de référence 5,20 × 4,10 × 2,80, 1 porte, 2 fenêtres (USER_FLOWS A3.1)",
+      "height": 2.8,
+      "walls": [[5.2, 90], [4.1, 90], [5.2, 90], [4.1, 90]],
+      "openings": [["door", 0, 0.83, 2.04], ["window", 1, 1.2, 1.25], ["window", 2, 1.2, 1.25]],
+      "expected": {"perimeter": 18.6, "floor": 21.32, "walls": 47.3868, "skirting": 17.77, "volume": 59.696, "closure": 0.0, "closes": true}
+    },
+    {
+      "name": "Pièce en L : 6 × 4 moins un angle de 2 × 2",
+      "height": 2.5,
+      "walls": [[6, 90], [2, 90], [2, 270], [2, 90], [4, 90], [4, 90]],
+      "openings": [["door", 4, 0.9, 2.1]],
+      "expected": {"perimeter": 20.0, "floor": 20.0, "walls": 48.11, "skirting": 19.1, "volume": 50.0, "closure": 0.0, "closes": true}
+    },
+    {
+      "name": "Trapèze rectangle : côtés parallèles 3 et 5, largeur 4, mur biais",
+      "height": 2.6,
+      "walls": [[4, 90], [3, 116.56505117707799], [4.47213595499958, 63.43494882292201], [5, 90]],
+      "openings": [],
+      "expected": {"perimeter": 16.47213595499958, "floor": 16.0, "walls": 42.82755348299891, "skirting": 16.47213595499958, "volume": 41.6, "closure": 0.0, "closes": true}
+    },
+    {
+      "name": "Cotes incohérentes : 5,00 / 4,00 / 5,03 / 4,00 ne se referment pas (3 cm)",
+      "height": 2.5,
+      "walls": [[5, 90], [4, 90], [5.03, 90], [4, 90]],
+      "openings": [],
+      "expected": {"perimeter": 18.03, "floor": 20.06, "walls": 45.075, "skirting": 18.03, "volume": 50.15, "closure": 0.03, "closes": false}
+    },
+    {
+      "name": "Ouvertures plus grandes que les murs : jamais de surface négative",
+      "height": 2.0,
+      "walls": [[0.5, 90], [0.5, 90], [0.5, 90], [0.5, 90]],
+      "openings": [["door", 0, 0.83, 2.04], ["door", 1, 0.83, 2.04], ["door", 2, 0.83, 2.04]],
+      "expected": {"perimeter": 2.0, "floor": 0.25, "walls": 1.0, "skirting": 0.0, "volume": 0.5, "closure": 0.0, "closes": true}
+    }
+  ]
+}

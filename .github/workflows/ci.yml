@@ -10,6 +10,96 @@ permissions:
   contents: write
 
 jobs:
+  serveur:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lamaalam
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: lamaalam_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lamaalam" --health-interval 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rôle PostgreSQL de test sans privilège (la sécurité des lignes ne s'applique pas aux superutilisateurs)
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U lamaalam -d postgres -c "CREATE ROLE lamaalam_test LOGIN PASSWORD 'test' NOSUPERUSER;"
+          psql -h localhost -U lamaalam -d postgres -c "CREATE DATABASE lamaalam_rls OWNER lamaalam_test;"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Dépendances
+        run: pip install -r requirements-dev.txt
+      - name: Tests (base PostgreSQL réelle)
+        env:
+          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam_test:test@localhost:5432/lamaalam_rls
+        run: python -m pytest -q
+      - name: Migrations cohérentes avec les modèles
+        env:
+          LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam_test:test@localhost:5432/lamaalam_rls
+        run: alembic check
+
+  bout-en-bout:
+    # Application Flutter ↔ serveur réel : connexion, 2FA, invitation, droits, déconnexion.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lamaalam
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: lamaalam_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lamaalam" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rôle PostgreSQL de test sans privilège (la sécurité des lignes ne s'applique pas aux superutilisateurs)
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U lamaalam -d postgres -c "CREATE ROLE lamaalam_test LOGIN PASSWORD 'test' NOSUPERUSER;"
+          psql -h localhost -U lamaalam -d postgres -c "CREATE DATABASE lamaalam_rls OWNER lamaalam_test;"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Dépendances
+        run: |
+          pip install -r backend/requirements.txt
+          flutter pub get
+      - name: Test de bout en bout
+        env:
+          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam_test:test@localhost:5432/lamaalam_rls
+          PYTHON: python
+        run: tool/integration_test.sh
+
+  exploitation:
+    # Critère de sortie du lot 1.9 : restauration complète sur machine vierge, chronométrée.
+    # La machine de GitHub est neuve à chaque exécution (aucune image ni aucun cache Docker).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Outil de chiffrement des sauvegardes (age)
+        run: sudo apt-get update -q && sudo apt-get install -y -q age
+      - name: Installation, sauvegarde, destruction, restauration, vérification
+        run: |
+          set -o pipefail
+          tool/restore_drill.sh 2>&1 | tee restore-drill.log
+          grep -E "EXERCICE|terminée en" restore-drill.log >> "$GITHUB_STEP_SUMMARY"
+
   verifier-et-construire:
     runs-on: ubuntu-latest
     steps:
@@ -28,15 +118,22 @@ jobs:
       - name: Dépendances
         run: flutter pub get
 
+      - name: Outil de contrôle du PDF (pdftotext)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
       - name: Analyse, tests et APK
         run: |
           set +e
           flutter analyze --no-fatal-infos > analyze.txt 2>&1; A=$?
           flutter test > test.txt 2>&1; T=$?
           # Les dossiers android/ et ios/ ne sont pas versionnés : on les génère ici.
-          flutter create --platforms=android --org ma.qiyas --project-name qiyas . > create.txt 2>&1
+          flutter create --platforms=android --org ma.grouplamaalam --project-name lamaalam . > create.txt 2>&1
           rm -f test/widget_test.dart
           flutter build apk --debug > build.txt 2>&1; B=$?
+          mkdir -p apk && cp build/app/outputs/flutter-apk/app-debug.apk apk/lamaalam-serveur.apk 2>/dev/null || true
+          # Version de démonstration sans serveur, tant qu'aucun hébergement n'est validé (D-06).
+          flutter build apk --debug --dart-define=LAMAALAM_DEMO=true >> build.txt 2>&1 || B=1
+          cp build/app/outputs/flutter-apk/app-debug.apk apk/lamaalam-demonstration-sans-serveur.apk 2>/dev/null || true
           K=$(grep -c "apply Kotlin Gradle Plugin" build.txt)
           {
             echo "# Rapport CI"
@@ -61,24 +158,27 @@ jobs:
             echo "## flutter build apk (fin du journal)"
             tail -n 120 build.txt
           } > ci-report.md
+          # Fin des journaux dans la sortie de l'étape : un échec est lisible sans télécharger le rapport.
+          echo "::group::flutter analyze"; tail -n 40 analyze.txt; echo "::endgroup::"
+          echo "::group::flutter test"; grep -E "\[E\]|Expected|Actual|Which|Exception|Error:" test.txt | head -n 80; tail -n 5 test.txt; echo "::endgroup::"
           echo "A=$A" >> "$GITHUB_ENV"
           echo "T=$T" >> "$GITHUB_ENV"
           echo "B=$B" >> "$GITHUB_ENV"
 
-      - name: APK de test pour les artisans pilotes
+      - name: APK de test
         if: env.B == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: qiyas-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: lamaalam-apk-test
+          path: apk/
           retention-days: 30
 
       - name: Publier le rapport sur la branche ci-results
         if: github.event_name != 'pull_request'
         run: |
           cp ci-report.md /tmp/ci-report.md
-          git config user.name "qiyas-ci"
-          git config user.email "qiyas-ci@users.noreply.github.com"
+          git config user.name "lamaalam-ci"
+          git config user.email "lamaalam-ci@users.noreply.github.com"
           git checkout --orphan ci-results
           git rm -rf --cached . > /dev/null
           cp /tmp/ci-report.md ci-report.md

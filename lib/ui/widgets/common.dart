@@ -6,6 +6,9 @@ import '../../core/format.dart';
 import '../../core/messages.dart';
 import '../../data/app_state.dart';
 import '../../domain/models.dart';
+import '../../session/session_controller.dart';
+import '../../sync/sync_engine.dart';
+import '../screens/sync_screen.dart';
 
 /// Champ texte qui garde son propre contrôleur (le curseur ne saute pas quand
 /// l'état se reconstruit) et se met à jour si la valeur change ailleurs.
@@ -146,7 +149,9 @@ class StatusPill extends StatelessWidget {
     final (Color bg, Color fg, String label) = switch (status) {
       null => (cs.tertiaryContainer, cs.onTertiaryContainer, 'Relevé en cours'),
       QuoteStatus.draft => (cs.surfaceContainerHighest, cs.onSurfaceVariant, kStatusLabel[status]!),
+      QuoteStatus.validated => (cs.secondaryContainer, cs.onSecondaryContainer, kStatusLabel[status]!),
       QuoteStatus.sent => (cs.primaryContainer, cs.onPrimaryContainer, kStatusLabel[status]!),
+      QuoteStatus.superseded => (cs.surfaceContainerHighest, cs.onSurfaceVariant, kStatusLabel[status]!),
       QuoteStatus.accepted => (const Color(0xFFDCEFE3), const Color(0xFF1F6B44), kStatusLabel[status]!),
       QuoteStatus.refused => (cs.errorContainer, cs.onErrorContainer, kStatusLabel[status]!),
     };
@@ -208,17 +213,46 @@ class SyncBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
-    final n = s.unsyncedCount;
-    final online = s.data.online;
-    final color = online && n == 0 ? const Color(0xFF2F7D55) : const Color(0xFFB5651D);
-    final label = !online ? 'Hors connexion' : (n == 0 ? 'Synchronisé' : '$n à synchroniser');
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.circle, size: 9, color: color),
-        const SizedBox(width: 5),
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
-      ]),
+    final engine = context.watch<SyncEngine>();
+    final session = context.watch<SessionController>();
+    final conflicts = s.data.conflicts.length;
+    final rejected = s.rejectedCount;
+    final pending = s.pendingCount;
+
+    final (String label, Color color) = !engine.enabled
+        ? ('Sur ce téléphone', const Color(0xFFF28C00))
+        : engine.phase == SyncPhase.running
+            ? ('Synchronisation…', const Color(0xFFB3B3B3))
+            : conflicts > 0
+                ? ('$conflicts conflit${conflicts > 1 ? 's' : ''}', const Color(0xFFFF6B5E))
+                : rejected > 0
+                    ? ('$rejected refusé${rejected > 1 ? 's' : ''}', const Color(0xFFFF6B5E))
+                    : engine.phase == SyncPhase.offline || !session.verifiedOnline
+                        ? (pending > 0 ? '$pending à envoyer · hors ligne' : 'Hors ligne', const Color(0xFFF28C00))
+                        : engine.phase == SyncPhase.error
+                            ? ('Erreur de synchronisation', const Color(0xFFFF6B5E))
+                            : pending > 0
+                                ? ('$pending à envoyer', const Color(0xFFF28C00))
+                                : ('Synchronisé', const Color(0xFF4CAF7A));
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: !engine.enabled
+          ? () => showToast(context, 'Version sans serveur : les données restent sur ce téléphone.')
+          : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SyncScreen())),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.circle, size: 9, color: color),
+          const SizedBox(width: 5),
+          // Largeur bornée : sur un écran de 360 points, un libellé long (« Erreur de
+          // synchronisation ») passe sur deux lignes au lieu d'écraser le titre.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 110),
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelSmall),
+          ),
+        ]),
+      ),
     );
   }
 }
