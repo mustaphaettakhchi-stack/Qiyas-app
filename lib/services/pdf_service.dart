@@ -21,7 +21,12 @@ class PdfService {
       .replaceAll(' ', ' ')
       .replaceAll('…', '...');
 
-  static Future<Uint8List> build({required Company company, required Project project, required Quote quote}) async {
+  static Future<Uint8List> build({
+    required Company company,
+    required Project project,
+    required Quote quote,
+    Client? client,
+  }) async {
     final doc = pw.Document(title: quote.number, author: company.name);
     final totals = quoteTotals(project, quote, company.vatPercent);
     final m = projectMeasures(project);
@@ -73,7 +78,7 @@ class PdfService {
             padding: const pw.EdgeInsets.all(8),
             decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
             child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              txt('Client : ${project.client} - ${project.phone}'),
+              txt('Client : ${client?.displayName ?? ''}${(client?.phone ?? '').isEmpty ? '' : ' - ${client!.phone}'}'),
               txt('Chantier : ${project.address}, ${project.city}'),
             ]),
           ),

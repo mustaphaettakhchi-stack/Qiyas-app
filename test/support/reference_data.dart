@@ -49,8 +49,8 @@ AppData sampleData() {
 
   final p1 = Project(
     id: 'p1',
-    client: 'M. Benali (exemple)',
-    phone: '0661234567',
+    legacyClientName: 'M. Benali (exemple)',
+    legacyClientPhone: '0661234567',
     address: 'Appartement, quartier Maârif',
     city: 'Casablanca',
     notes: 'Client présent le samedi. Carrelage gris clair souhaité.',
@@ -68,11 +68,10 @@ AppData sampleData() {
 
   final p2 = Project(
     id: 'p2',
-    client: 'Mme Alaoui (exemple)',
-    phone: '0670112233',
+    legacyClientName: 'Mme Alaoui (exemple)',
+    legacyClientPhone: '0670112233',
     address: 'Villa, Agdal',
     city: 'Rabat',
-    synced: true,
     updatedAt: now.subtract(const Duration(days: 11)),
     rooms: [_room('r6', 'Salon', 6.0, 4.5, 3.0, 1, 3), _room('r7', 'Chambre', 4.0, 3.5, 3.0, 1, 1)],
     quotes: [
@@ -89,12 +88,11 @@ AppData sampleData() {
 
   final p3 = Project(
     id: 'p3',
-    client: 'Riad Dar Zitoun (exemple)',
-    phone: '0524445566',
+    legacyClientName: 'Riad Dar Zitoun (exemple)',
+    legacyClientPhone: '0524445566',
     address: 'Médina, derb Dabachi',
     city: 'Marrakech',
     notes: "Programme de mise à niveau, 4 chambres d'hôtes.",
-    synced: true,
     updatedAt: now.subtract(const Duration(days: 5)),
     rooms: [_room('r8', 'Chambre', 4.2, 3.6, 3.2, 1, 1), _room('r9', 'Chambre', 4.0, 3.4, 3.2, 1, 1)],
     quotes: [

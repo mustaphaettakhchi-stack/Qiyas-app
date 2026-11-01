@@ -13,7 +13,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .db import get_db
+from .db import bind_organization, get_db
 from .models import AuthSession, Role, User, UserStatus
 from .security import ACCESS, decode_jwt, now
 
@@ -68,6 +68,7 @@ def get_context(request: Request, db: Session = Depends(get_db)) -> Context:
     if row is None:
         raise _unauthorized()
     user = row[0]
+    bind_organization(db, user.organization_id)
     return Context(
         user=user,
         session_id=session_id,

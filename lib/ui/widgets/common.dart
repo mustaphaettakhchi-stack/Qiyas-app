@@ -6,6 +6,9 @@ import '../../core/format.dart';
 import '../../core/messages.dart';
 import '../../data/app_state.dart';
 import '../../domain/models.dart';
+import '../../session/session_controller.dart';
+import '../../sync/sync_engine.dart';
+import '../screens/sync_screen.dart';
 
 /// Champ texte qui garde son propre contrôleur (le curseur ne saute pas quand
 /// l'état se reconstruit) et se met à jour si la valeur change ailleurs.
@@ -207,18 +210,42 @@ class SyncBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Tant que la synchronisation serveur n'est pas branchée, l'indicateur dit la vérité :
-    // les données sont enregistrées sur le téléphone uniquement.
-    context.watch<AppState>();
-    const color = Color(0xFFF28C00);
-    const label = 'Sur ce téléphone';
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.circle, size: 9, color: color),
-        const SizedBox(width: 5),
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
-      ]),
+    final s = context.watch<AppState>();
+    final engine = context.watch<SyncEngine>();
+    final session = context.watch<SessionController>();
+    final conflicts = s.data.conflicts.length;
+    final rejected = s.rejectedCount;
+    final pending = s.pendingCount;
+
+    final (String label, Color color) = !engine.enabled
+        ? ('Sur ce téléphone', const Color(0xFFF28C00))
+        : engine.phase == SyncPhase.running
+            ? ('Synchronisation…', const Color(0xFFB3B3B3))
+            : conflicts > 0
+                ? ('$conflicts conflit${conflicts > 1 ? 's' : ''}', const Color(0xFFFF6B5E))
+                : rejected > 0
+                    ? ('$rejected refusé${rejected > 1 ? 's' : ''}', const Color(0xFFFF6B5E))
+                    : engine.phase == SyncPhase.offline || !session.verifiedOnline
+                        ? (pending > 0 ? '$pending à envoyer · hors ligne' : 'Hors ligne', const Color(0xFFF28C00))
+                        : engine.phase == SyncPhase.error
+                            ? ('Erreur de synchronisation', const Color(0xFFFF6B5E))
+                            : pending > 0
+                                ? ('$pending à envoyer', const Color(0xFFF28C00))
+                                : ('Synchronisé', const Color(0xFF4CAF7A));
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: !engine.enabled
+          ? () => showToast(context, 'Version sans serveur : les données restent sur ce téléphone.')
+          : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SyncScreen())),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.circle, size: 9, color: color),
+          const SizedBox(width: 5),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ]),
+      ),
     );
   }
 }

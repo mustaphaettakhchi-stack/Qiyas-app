@@ -116,7 +116,9 @@ class ProfileScreen extends StatelessWidget {
           ),
           TextButton(
             onPressed: () async {
+              final pending = s.pendingCount + s.data.conflicts.length;
               if (await confirm(context, 'Se déconnecter ?',
+                  '${pending > 0 ? 'Attention : $pending fiche(s) ne sont pas encore envoyées au serveur. ' : ''}'
                   'Les données saisies restent sur ce téléphone. Il faudra votre mot de passe et votre code pour revenir.',
                   ok: 'Se déconnecter')) {
                 await session.logout();

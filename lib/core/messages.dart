@@ -20,9 +20,10 @@ const Map<QuantityBase, String> kBaseLabel = {
 const List<String> kUnits = ['m²', 'ml', 'u', 'forfait'];
 
 /// Message envoyé au client avec le devis (WhatsApp, e-mail).
-String quoteMessage(Company c, Project p, Quote q) {
+String quoteMessage(Company c, Project p, Quote q, {Client? client}) {
   final t = quoteTotals(p, q, c.vatPercent);
-  return 'Bonjour ${p.client},\n'
+  final name = client?.displayName.trim() ?? '';
+  return '${name.isEmpty ? 'Bonjour' : 'Bonjour $name'},\n'
       'Voici notre devis ${q.number} pour ${p.address}, ${p.city}.\n'
       'Total HT : ${dh(t.ht)} - TVA ${fmt2(c.vatPercent)} % : ${dh(t.vat)} - Total TTC : ${dh(t.ttc)}.\n'
       'Acompte demandé : ${dh(t.deposit)}. Devis valable ${c.validityDays} jours.\n'

@@ -27,6 +27,12 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+      - name: Rôle PostgreSQL de test sans privilège (la sécurité des lignes ne s'applique pas aux superutilisateurs)
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U lamaalam -d postgres -c "CREATE ROLE lamaalam_test LOGIN PASSWORD 'test' NOSUPERUSER;"
+          psql -h localhost -U lamaalam -d postgres -c "CREATE DATABASE lamaalam_rls OWNER lamaalam_test;"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -34,11 +40,11 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Tests (base PostgreSQL réelle)
         env:
-          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
+          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam_test:test@localhost:5432/lamaalam_rls
         run: python -m pytest -q
       - name: Migrations cohérentes avec les modèles
         env:
-          LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
+          LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam_test:test@localhost:5432/lamaalam_rls
         run: alembic check
 
   bout-en-bout:
@@ -56,6 +62,12 @@ jobs:
           --health-cmd "pg_isready -U lamaalam" --health-interval 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - name: Rôle PostgreSQL de test sans privilège (la sécurité des lignes ne s'applique pas aux superutilisateurs)
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U lamaalam -d postgres -c "CREATE ROLE lamaalam_test LOGIN PASSWORD 'test' NOSUPERUSER;"
+          psql -h localhost -U lamaalam -d postgres -c "CREATE DATABASE lamaalam_rls OWNER lamaalam_test;"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -69,7 +81,7 @@ jobs:
           flutter pub get
       - name: Test de bout en bout
         env:
-          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
+          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam_test:test@localhost:5432/lamaalam_rls
           PYTHON: python
         run: tool/integration_test.sh
 

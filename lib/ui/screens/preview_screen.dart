@@ -28,10 +28,12 @@ class PreviewScreen extends StatelessWidget {
     }
     final q = found;
     final c = s.company;
-    final message = quoteMessage(c, p, q);
+    final client = s.clientOf(p);
+    final phone = client?.phone ?? '';
+    final message = quoteMessage(c, p, q, client: client);
 
     Future<void> sendPdf() async {
-      final bytes = await PdfService.build(company: c, project: p, quote: q);
+      final bytes = await PdfService.build(company: c, project: p, quote: q, client: client);
       final shared = await ShareService.sharePdf(bytes, '${q.number}.pdf', message);
       if (shared && q.status == QuoteStatus.draft) {
         s.markSent(p, q);
@@ -40,7 +42,7 @@ class PreviewScreen extends StatelessWidget {
     }
 
     Future<void> openWhatsApp() async {
-      final ok = await ShareService.openWhatsApp(p.phone, message);
+      final ok = await ShareService.openWhatsApp(phone, message);
       if (!ok && context.mounted) {
         showToast(context, 'Numéro du client manquant ou WhatsApp indisponible.');
       }
@@ -51,7 +53,7 @@ class PreviewScreen extends StatelessWidget {
       body: Column(children: [
         Expanded(
           child: PdfPreview(
-            build: (_) => PdfService.build(company: c, project: p, quote: q),
+            build: (_) => PdfService.build(company: c, project: p, quote: q, client: client),
             canChangePageFormat: false,
             canChangeOrientation: false,
             canDebug: false,
@@ -72,7 +74,7 @@ class PreviewScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               OutlinedButton.icon(
-                onPressed: p.phone.isEmpty ? null : openWhatsApp,
+                onPressed: phone.isEmpty ? null : openWhatsApp,
                 icon: const Icon(Icons.chat_outlined),
                 label: const Text('Écrire au client sur WhatsApp'),
               ),

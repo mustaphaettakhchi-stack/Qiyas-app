@@ -3,78 +3,148 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/calculations.dart';
 import '../domain/models.dart';
-import '../services/sync_service.dart';
 import 'local_store.dart';
 import 'templates.dart';
 
-/// État central de l'application. Chaque modification passe par [mutate],
-/// qui horodate le projet, sauvegarde sur le téléphone, tente une synchronisation
-/// et rafraîchit l'interface.
+/// État central de l'application. Chaque modification passe par [mutate], qui horodate,
+/// sauvegarde sur le téléphone, rafraîchit l'interface et prévient la synchronisation.
 class AppState extends ChangeNotifier {
-  AppState({required this.store, required this.sync});
+  AppState({required this.store});
 
   final LocalStore store;
-  final SyncService sync;
   static const _uuid = Uuid();
 
   late AppData data;
   bool loaded = false;
 
-  String newId() => _uuid.v4();
+  /// Appelé après chaque modification enregistrée (déclenche la synchronisation différée).
+  VoidCallback? onLocalChange;
+
+  /// Identifiants ordonnés dans le temps (UUID v7), générés hors connexion.
+  String newId() => _uuid.v7();
 
   Future<void> init() async {
     data = await store.load() ?? AppData(company: Company(), prestations: [], projects: []);
+    _migrateLegacyClients();
     loaded = true;
     notifyListeners();
   }
 
-  Future<void> _persist() async {
+  /// Reprise des projets Qiyas : le nom et le téléphone saisis deviennent une fiche client.
+  void _migrateLegacyClients() {
+    var changed = false;
+    for (final p in data.projects) {
+      if (p.clientId != null || p.legacyClientName.trim().isEmpty) continue;
+      final existing = data.clients.where((c) =>
+          c.displayName.trim().toLowerCase() == p.legacyClientName.trim().toLowerCase() &&
+          c.phone == p.legacyClientPhone);
+      final client = existing.isNotEmpty
+          ? existing.first
+          : (Client(id: newId(), displayName: p.legacyClientName.trim(), phone: p.legacyClientPhone, city: p.city)
+            ..markEdited());
+      if (existing.isEmpty) data.clients.add(client);
+      p
+        ..clientId = client.id
+        ..legacyClientName = ''
+        ..legacyClientPhone = ''
+        ..markEdited();
+      changed = true;
+    }
+    if (changed) store.save(data);
+  }
+
+  Future<void> save() async {
     try {
       await store.save(data);
-      final done = await sync.push(data);
-      if (done.isNotEmpty) {
-        for (final p in data.projects) {
-          if (done.contains(p.id)) p.synced = true;
-        }
-        await store.save(data);
-      }
     } catch (e) {
       debugPrint('Sauvegarde impossible : $e');
     }
   }
 
   /// Applique une modification, puis sauvegarde et notifie.
-  void mutate(VoidCallback change, {Project? touch}) {
+  /// [meta] : la modification touche des informations partagées avec le serveur
+  /// (fiche projet ou client) et devra être synchronisée.
+  void mutate(VoidCallback change, {Project? touch, bool meta = false, Client? client}) {
     change();
     if (touch != null) {
       touch.updatedAt = DateTime.now();
-      touch.synced = false;
+      if (meta) touch.markEdited();
     }
+    client?.markEdited();
     notifyListeners();
-    _persist().then((_) => notifyListeners());
+    save().then((_) => onLocalChange?.call());
+  }
+
+  /// Rafraîchit l'interface après une synchronisation (données déjà modifiées).
+  Future<void> afterSync() async {
+    await save();
+    notifyListeners();
   }
 
   // ---------- lecture ----------
   Company get company => data.company;
   List<Prestation> get prestations => data.prestations;
-  List<Project> get activeProjects => data.projects.where((p) => !p.archived).toList()
+  List<Project> get activeProjects => data.projects.where((p) => !p.deleted && !p.archived).toList()
     ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  int get unsyncedCount => data.projects.where((p) => !p.synced && !p.archived).length;
+  List<Client> get activeClients => data.clients.where((c) => !c.deleted).toList()
+    ..sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+  /// Fiches en attente d'envoi (y compris les suppressions), hors refus et conflits.
+  int get pendingCount =>
+      data.clients.where((c) => c.dirty && c.syncError == null).length +
+      data.projects.where((p) => p.dirty && p.syncError == null).length;
+
+  int get rejectedCount =>
+      data.clients.where((c) => c.syncError != null).length + data.projects.where((p) => p.syncError != null).length;
 
   Project? project(String id) {
     for (final p in data.projects) {
-      if (p.id == id) return p;
+      if (p.id == id && !p.deleted) return p;
     }
     return null;
   }
 
-  void setOnline(bool online) => mutate(() => data.online = online);
+  Client? client(String? id) {
+    if (id == null) return null;
+    for (final c in data.clients) {
+      if (c.id == id && !c.deleted) return c;
+    }
+    return null;
+  }
 
+  Client? clientOf(Project p) => client(p.clientId);
+
+  String clientName(Project p) {
+    final c = clientOf(p);
+    return c == null || c.displayName.trim().isEmpty ? 'Client à renseigner' : c.displayName;
+  }
+
+  List<Project> projectsOf(Client c) => data.projects.where((p) => !p.deleted && p.clientId == c.id).toList();
+
+  // ---------- clients ----------
+  Client createClient({String name = ''}) {
+    final c = Client(id: newId(), displayName: name);
+    mutate(() => data.clients.add(c), client: c);
+    return c;
+  }
+
+  /// Supprime une fiche client sans projet. La suppression est envoyée au serveur.
+  void deleteClient(Client c) {
+    if (projectsOf(c).isNotEmpty) return;
+    mutate(() {
+      if (c.serverVersion == null) {
+        data.clients.remove(c); // jamais envoyée : rien à supprimer sur le serveur
+      } else {
+        c.deleted = true;
+      }
+    }, client: c);
+  }
 
   // ---------- projets ----------
-  Project createProject() {
-    final p = Project(id: newId(), city: company.city);
-    mutate(() => data.projects.add(p), touch: p);
+  Project createProject({String? clientId}) {
+    final c = client(clientId);
+    final p = Project(id: newId(), clientId: clientId, city: c?.city ?? company.city, address: c?.address ?? '');
+    mutate(() => data.projects.add(p), touch: p, meta: true);
     return p;
   }
 
@@ -82,8 +152,10 @@ class AppState extends ChangeNotifier {
     final copy = Project.fromJson(src.toJson());
     final p = Project(
       id: newId(),
-      client: '${src.client} (copie)',
-      phone: src.phone,
+      clientId: src.clientId,
+      name: src.name.isEmpty ? '' : '${src.name} (copie)',
+      projectType: src.projectType,
+      propertyKind: src.propertyKind,
       address: src.address,
       city: src.city,
       notes: src.notes,
@@ -103,11 +175,11 @@ class AppState extends ChangeNotifier {
           ),
       ],
     );
-    mutate(() => data.projects.add(p), touch: p);
+    mutate(() => data.projects.add(p), touch: p, meta: true);
     return p;
   }
 
-  void archiveProject(Project p) => mutate(() => p.archived = true, touch: p);
+  void archiveProject(Project p) => mutate(() => p.status = 'archived', touch: p, meta: true);
 
   // ---------- pièces ----------
   static const roomNames = ['Salon', 'Chambre', 'Cuisine', 'Salle de bain', 'Couloir', 'Autre'];

@@ -80,9 +80,15 @@ Règles : `domain/` n'importe ni Flutter ni réseau ; une fonctionnalité n'impo
 
 ### 3.4 Synchronisation
 
-- Chaque enregistrement porte `id` (UUID v7, généré sur le téléphone), `version` (entier incrémenté par le serveur), `updated_at`, `deleted_at`.
-- Le téléphone enregistre ses modifications dans une table `sync_outbox` (opération, table, id, version de base, charge utile).
-- À la reconnexion : envoi des opérations dans l'ordre ; le serveur refuse toute opération dont la `version de base` n'est plus la version courante (verrouillage optimiste) → **conflit**.
+*Implémenté au lot 1.2 pour les fiches clients et projets (`lib/sync/sync_engine.dart`, `backend/app/routes/sync.py`).*
+
+- Chaque enregistrement porte `id` (UUID v7, généré sur le téléphone), `version` (entier incrémenté par le serveur), `updated_at`, `deleted_at`, et `sync_seq`, numéro d'ordre attribué par un déclencheur PostgreSQL à chaque écriture.
+- `sync_seq` est tiré sous un verrou transactionnel par organisation : l'ordre des numéros est l'ordre de validation, ce qui garantit qu'aucune écriture n'est sautée par un téléphone qui reprend « depuis le numéro N ».
+- Le téléphone marque chaque fiche modifiée (`dirty`) avec la version serveur sur laquelle il s'est appuyé. Choix : synchronisation **par état** plutôt que par journal d'opérations (`sync_outbox`), plus simple et suffisante tant que seules des fiches entières sont échangées ; à réexaminer si des listes (lignes de devis) doivent être fusionnées champ par champ.
+- Envoi : `POST /sync/push`, clients avant projets ; chaque fiche est appliquée ou refusée séparément (point de sauvegarde par fiche). Une `version de base` périmée → **conflit**. Réception : `GET /sync/pull?cursor=N`, suppressions comprises.
+- Les fiches modifiées sur le téléphone ne sont envoyées que si le serveur les accepte ; un refus (donnée invalide, droit insuffisant) est affiché sur la fiche et n'est pas renvoyé en boucle.
+- Un téléphone appartient au premier compte qui l'a synchronisé ; un autre compte ne peut pas synchroniser ses données (protection contre l'envoi de fiches sous une mauvaise identité).
+- Un projet supprimé sur le serveur mais qui contient des pièces, photos ou devis présents uniquement sur le téléphone devient un conflit, jamais une suppression silencieuse.
 - Un conflit n'est jamais résolu en silence pour une donnée métier (mesure, ligne de devis) : l'utilisateur choisit entre sa valeur et celle du serveur. Seules les données sans enjeu (préférences d'affichage) suivent « dernier écrit gagne ».
 - Les fichiers sont envoyés par morceaux (reprise après coupure), après les métadonnées, en Wi-Fi par défaut pour les vidéos (paramétrable).
 - Un devis **validé** ou **envoyé** est immuable : toute modification crée une nouvelle version.

@@ -44,6 +44,8 @@ Hypothèse retenue sous réserve de la décision D-05 :
 - Toute requête métier est filtrée par `organization_id` (RLS PostgreSQL, rôle applicatif sans `BYPASSRLS`) puis, pour un client, par la liste de ses projets ; pour un collaborateur restreint, par ses projets.
 - Un client ne voit jamais : prix d'achat, déboursés, marges, coefficients, notes internes, éléments non marqués `visible_to_client`.
 - Les identifiants sont des UUID (non devinables), mais **la sécurité ne repose jamais sur ce caractère non devinable**.
+- État au lot 1.2 : la RLS est active et forcée sur `clients` et `projects` ; l'API fixe `app.org_id` à chaque transaction ; un test vérifie qu'une requête SQL brute ne voit ni n'écrit hors de l'organisation fixée.
+- Synchronisation : un collaborateur ne reçoit que les projets qu'il a créés ou dont il est responsable, et les clients correspondants ; un compte client n'a aucun accès à la synchronisation.
 - Tests obligatoires : pour chaque route, un test « client A tente d'accéder à la ressource du client B » qui doit renvoyer 404 (et non 403, pour ne pas révéler l'existence).
 
 ## 5. Fichiers

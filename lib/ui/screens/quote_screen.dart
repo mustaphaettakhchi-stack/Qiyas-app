@@ -70,7 +70,7 @@ class QuoteScreen extends StatelessWidget {
       appBar: AppBar(title: Text(quote.number), actions: const [SyncBadge()]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Row(children: [
-          Expanded(child: Text('${frDate(quote.date)} · ${p.client.isEmpty ? 'Client à renseigner' : p.client}', style: t.bodyMedium)),
+          Expanded(child: Text('${frDate(quote.date)} · ${s.clientName(p)}', style: t.bodyMedium)),
           StatusPill(quote.status),
         ]),
         const SizedBox(height: 8),

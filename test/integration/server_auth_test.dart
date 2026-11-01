@@ -6,10 +6,30 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lamaalam/data/app_state.dart';
+import 'package:lamaalam/data/local_store.dart';
+import 'package:lamaalam/domain/models.dart';
 import 'package:lamaalam/session/api_client.dart';
 import 'package:lamaalam/session/auth_service.dart';
 import 'package:lamaalam/session/session_controller.dart';
 import 'package:lamaalam/session/session_store.dart';
+import 'package:lamaalam/sync/sync_engine.dart';
+
+class _MemoryStore extends LocalStore {
+  AppData? saved;
+
+  @override
+  Future<AppData?> load() async => saved;
+
+  @override
+  Future<void> save(AppData data) async => saved = data;
+}
+
+// Partagé entre les deux tests (exécutés dans l'ordre).
+String? _adminSecret;
+String? _collabEmail;
+String? _collabSecret;
+const _collabPassword = 'Fontaine-cuivre-jasmin-port-24';
 
 /// Code TOTP (RFC 6238, SHA-1, 6 chiffres, 30 s), comme une application d'authentification.
 String totp(String base32Secret, {DateTime? at, int offsetSteps = 0}) {
@@ -61,6 +81,7 @@ void main() {
       throwsA(isA<ApiException>().having((e) => e.status, 'status', 401)),
     );
     final codes = await session.auth.mfaConfirm(mfaToken, totp(info.secret));
+    _adminSecret = info.secret;
     expect(codes, hasLength(10));
     await session.completeLogin();
     expect(session.user!.isAdmin, isTrue);
@@ -69,7 +90,7 @@ void main() {
     // 3. Administration de l'équipe.
     final users = await session.api.get('/users') as List;
     expect(users.map((u) => (u as Map)['email']), contains(email));
-    final collabEmail = 'collab-${DateTime.now().millisecondsSinceEpoch}@exemple.ma';
+    final collabEmail = _collabEmail = 'collab-${DateTime.now().millisecondsSinceEpoch}@exemple.ma';
     final inv = await session.api.post('/invitations', {
       'email': collabEmail,
       'full_name': 'Collaborateur Test',
@@ -90,6 +111,7 @@ void main() {
     final collabStep = await other.auth.login(collabEmail, 'Escalier-citron-volet-bleu-71') as LoginNeedsMfaSetup;
     final collabInfo = await other.auth.mfaSetup(collabStep.mfaToken);
     await other.auth.mfaConfirm(collabStep.mfaToken, totp(collabInfo.secret));
+    _collabSecret = collabInfo.secret;
     await other.completeLogin();
     await expectLater(
       other.api.get('/users'),
@@ -124,5 +146,111 @@ void main() {
     final replayApi = ApiClient(store: replay);
     await replayApi.setBaseUrl(url!);
     expect(await replayApi.refresh(), isFalse);
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
+
+  /// Connexion complète ; le code TOTP du pas suivant est essayé si le code courant a déjà servi.
+  Future<SessionController> loginPhone(String email, String password, String secret) async {
+    final s = await newSession(MemorySessionStore());
+    final step = await s.auth.login(email, password) as LoginNeedsCode;
+    try {
+      await s.auth.mfaVerify(step.mfaToken, code: totp(secret));
+    } on ApiException {
+      await s.auth.mfaVerify(step.mfaToken, code: totp(secret, offsetSteps: 1));
+    }
+    await s.completeLogin();
+    return s;
+  }
+
+  Future<(AppState, SyncEngine)> phone(SessionController session) async {
+    final state = AppState(store: _MemoryStore());
+    await state.init();
+    final engine = SyncEngine(state: state, session: session, debounce: const Duration(days: 1));
+    return (state, engine);
+  }
+
+  test('Synchronisation entre deux téléphones : hors ligne, conflit, coupure, suppression', () async {
+    final adminSession = await loginPhone(email, password, _adminSecret!);
+    final collabSession = await loginPhone(_collabEmail!, _collabPassword, _collabSecret!);
+    final (admin, adminSync) = await phone(adminSession);
+    final (collab, collabSync) = await phone(collabSession);
+
+    // 1. Le collaborateur crée un client et un projet ; rien n'est encore envoyé.
+    final client = collab.createClient(name: 'M. Benali');
+    collab.mutate(() => client.phone = '0661000000', client: client);
+    final project = collab.createProject(clientId: client.id);
+    collab.mutate(() => project.city = 'Tanger', touch: project, meta: true);
+    expect(collab.pendingCount, 2);
+    expect(project.reference, isNull);
+
+    await collabSync.syncNow();
+    expect(collabSync.phase, SyncPhase.idle, reason: collabSync.lastError);
+    expect(collab.pendingCount, 0);
+    expect(project.reference, matches(RegExp(r'^LMA-\d{4}-\d{4}$')));
+    expect(project.managerId, collabSession.user!.id, reason: 'responsable attribué par le serveur');
+
+    // 2. L'administrateur reçoit les deux fiches.
+    await adminSync.syncNow();
+    final adminProject = admin.project(project.id)!;
+    expect(admin.clientName(adminProject), 'M. Benali');
+    expect(adminProject.reference, project.reference);
+
+    // 3. Modifications simultanées : conflit, jamais d'écrasement silencieux.
+    admin.mutate(() => adminProject.notes = 'Accès par la cour', touch: adminProject, meta: true);
+    collab.mutate(() => project.notes = 'Clés chez le voisin', touch: project, meta: true);
+    await adminSync.syncNow();
+    await collabSync.syncNow();
+    expect(collab.data.conflicts, hasLength(1));
+    expect(project.notes, 'Clés chez le voisin');
+
+    // Le collaborateur garde sa version ; l'administrateur la reçoit.
+    collabSync.keepMine(collab.data.conflicts.single);
+    await collabSync.syncNow();
+    expect(collab.data.conflicts, isEmpty);
+    expect(collab.pendingCount, 0);
+    expect(collab.rejectedCount, 0);
+    await adminSync.syncNow();
+    expect(adminProject.notes, 'Clés chez le voisin');
+
+    // 4. Coupure réseau : la saisie reste sur le téléphone puis part au retour du réseau.
+    final realUrl = collabSession.api.baseUrl!;
+    await collabSession.api.setBaseUrl('http://127.0.0.1:9');
+    collab.mutate(() => client.city = 'Tétouan', client: client);
+    await collabSync.syncNow();
+    expect(collabSync.phase, SyncPhase.offline);
+    expect(collab.pendingCount, 1);
+    await collabSession.api.setBaseUrl(realUrl);
+    await collabSync.syncNow();
+    expect(collab.pendingCount, 0);
+    await adminSync.syncNow();
+    expect(admin.client(client.id)!.city, 'Tétouan');
+
+    // 5. Envoi refusé par le serveur : message affiché, pas de boucle d'envoi.
+    collab.mutate(() => client.ice = '123', client: client);
+    await collabSync.syncNow();
+    expect(client.syncError, isNotNull);
+    expect(collab.rejectedCount, 1);
+    collab.mutate(() => client.ice = '', client: client);
+    await collabSync.syncNow();
+    expect(client.syncError, isNull);
+    expect(collab.pendingCount, 0);
+
+    // 6. Suppression par l'administrateur d'un projet qui a des pièces sur le téléphone du
+    //    collaborateur : conflit plutôt que perte des pièces.
+    collab.addRoom(project);
+    admin.mutate(() => adminProject.deleted = true, touch: adminProject, meta: true);
+    await adminSync.syncNow();
+    expect(admin.data.projects.where((p) => p.id == project.id), isEmpty);
+    await collabSync.syncNow();
+    expect(collab.data.conflicts.single.reason, contains('pièces'));
+    collabSync.keepMine(collab.data.conflicts.single);
+    await collabSync.syncNow();
+    await adminSync.syncNow();
+    expect(admin.project(project.id), isNotNull, reason: 'projet restauré sur le serveur');
+
+    // 7. Un projet sans données locales supprimé ailleurs disparaît simplement.
+    final p2 = admin.createProject(clientId: client.id);
+    await adminSync.syncNow();
+    await collabSync.syncNow();
+    expect(collab.project(p2.id), isNull, reason: 'projet de l\'administrateur, non confié au collaborateur');
   }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
 }

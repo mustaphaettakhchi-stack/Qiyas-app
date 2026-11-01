@@ -13,7 +13,8 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | Application : relevé de pièces rectangulaires, métré, grille de prix, devis PDF, partage | Hérité de Qiyas, fonctionnel, **local au téléphone** |
 | Application : charte LAMAALAM, logo, aucune donnée de démonstration | Fait |
 | Application : connexion au serveur, double authentification, invitation, gestion de l'équipe | Fait, testé de bout en bout contre le serveur réel |
-| Pièces non rectangulaires, synchronisation, espace client, bibliothèque, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
+| Clients et projets partagés entre téléphones (synchronisation, conflits, références `LMA-AAAA-NNNN`) | Fait, testé de bout en bout ; pièces, photos et devis restent locaux |
+| Pièces non rectangulaires, synchronisation des pièces et devis, espace client, bibliothèque, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
 
 ## Documentation
 
@@ -110,5 +111,5 @@ docker-compose.yml       pile serveur
 | Fonction | État |
 | --- | --- |
 | Connexion | Réelle (serveur LAMAALAM). Une version « démonstration sans serveur » n'existe que si elle est compilée avec `--dart-define=LAMAALAM_DEMO=true` ; elle l'affiche en clair |
-| Synchronisation | Aucune : l'application affiche « Sur ce téléphone » |
+| Synchronisation | Réelle pour les clients et projets ; la version « démonstration sans serveur » affiche « Sur ce téléphone » |
 | Télémètre Bluetooth | Non branché ; le bouton de mesure simulée est masqué pour ne jamais produire de cote inventée (décision D-02) |

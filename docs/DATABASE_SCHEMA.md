@@ -28,7 +28,7 @@ Règles :
 - **Unités** d'ouvrage : type énuméré `unit_t` = `m`, `m2`, `m3`, `kg`, `l`, `u`, `forfait`.
 - **Index partiels** `WHERE deleted_at IS NULL` sur les colonnes de recherche usuelles.
 - Les tables « filles » d'un projet portent aussi `project_id` (dénormalisé) pour filtrer l'accès client sans jointure profonde.
-- **RLS** activée sur toutes les tables portant `organization_id` : `USING (organization_id = current_setting('app.org_id')::uuid)`.
+- **RLS** activée sur toutes les tables portant `organization_id` : `USING (organization_id = current_setting('app.org_id')::uuid)`. *État : active et forcée (`FORCE ROW LEVEL SECURITY`) sur `clients` et `projects` ; les tables d'identité (`users`, `auth_sessions`…) en sont exclues car la connexion doit retrouver un compte avant de connaître son organisation. Un superutilisateur PostgreSQL ignore toujours la RLS : l'API se connecte avec un rôle sans ce privilège.*
 - Fichiers : jamais stockés en base. La base stocke le chemin interne, la taille, le type MIME et l'empreinte SHA-256 (table `files`).
 - Suppression physique uniquement par la procédure d'effacement des données personnelles (voir `SECURITY.md`), journalisée.
 
@@ -97,10 +97,10 @@ Contrainte : UNIQUE `(user_id, role, scope_project_id)`. Contrainte applicative 
 
 ### 3.2 Clients et projets
 
-**clients** — `type` (`individual`, `company`), `display_name`, `first_name`, `last_name`, `company_name`, `ice` NULL, `phone`, `email`, `address`, `city`, `notes`, `consent_at` (consentement loi 09-08 / RGPD), `consent_text_version`.
+**clients** *(créée, migration 0003)* — `type` (`individual`, `company`), `display_name`, `ice`, `phone`, `email`, `address`, `city`, `notes`, `consent_at` (consentement loi 09-08 / RGPD), `consent_text_version`, `sync_seq`. Les champs `first_name`, `last_name`, `company_name` initialement prévus sont remplacés par le seul `display_name` (nom ou raison sociale) : à redécouper si les devis l'exigent.
 Index : `(organization_id, display_name)`, trigramme sur `display_name` pour la recherche (extension `pg_trgm`).
 
-**projects** — `reference` (UNIQUE par organisation, ex. `LMA-2026-0042`), `client_id` FK NOT NULL, `name`, `project_type` (`renovation`, `new_build`, `extension`, `interior`, `exterior`, `commercial`), `property_kind` (`apartment`, `house`, `villa`, `land`, `commercial`), `status` (`prospect`, `visit_planned`, `estimating`, `estimate_sent`, `won`, `in_progress`, `delivered`, `lost`, `archived`), `description`, `budget_cents`, `currency`, `visit_date`, `manager_id` FK `users`, `site_address`, `site_city`, `latitude`, `longitude`, `notes`.
+**projects** *(créée, migration 0003 ; valeurs énumérées stockées en texte avec contrainte CHECK, plus simples à faire évoluer que des types PostgreSQL ; `client_id` provisoirement facultatif pour reprendre les projets Qiyas sans client ; latitude et longitude pas encore créées)* — `reference` (UNIQUE par organisation, ex. `LMA-2026-0042`, attribuée par le serveur avec le préfixe `organizations.reference_prefix` et la table `org_counters`), `client_id` FK, `name`, `project_type` (`renovation`, `new_build`, `extension`, `interior`, `exterior`, `commercial`), `property_kind` (`apartment`, `house`, `villa`, `land`, `commercial`), `status` (`prospect`, `visit_planned`, `estimating`, `estimate_sent`, `won`, `in_progress`, `delivered`, `lost`, `archived`), `description`, `budget_cents`, `currency`, `visit_date`, `manager_id` FK `users`, `site_address`, `site_city`, `latitude`, `longitude`, `notes`.
 Index : UNIQUE `(organization_id, reference)`, `(organization_id, status)`, `(client_id)`.
 
 > `project_type` et `property_kind` sont séparés : le cahier des charges mélange dans une même liste la nature des travaux (rénovation, extension…) et la nature du bien (appartement, villa, terrain…).
