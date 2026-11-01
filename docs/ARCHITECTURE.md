@@ -161,7 +161,7 @@ Reprises de Qiyas et étendues :
 | Surface de sol | aire du polygone de la pièce (formule du lacet) | m² |
 | Périmètre | somme des longueurs de murs | m |
 | Surface murale brute | Σ (longueur du mur × hauteur sous plafond) | m² |
-| Surface murale nette | brute − Σ ouvertures du mur | m² |
+| Surface murale nette | Σ max(0, longueur du mur × hauteur − ouvertures de ce mur) | m² |
 | Plinthes | périmètre − Σ largeurs des portes | m |
 | Volume | aire du sol × hauteur | m³ |
 | Quantité à commander | quantité nette × (1 + taux de perte) | unité de l'ouvrage |

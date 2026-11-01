@@ -14,7 +14,8 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | Application : charte LAMAALAM, logo, aucune donnée de démonstration | Fait |
 | Application : connexion au serveur, double authentification, invitation, gestion de l'équipe | Fait, testé de bout en bout contre le serveur réel |
 | Clients et projets partagés entre téléphones (synchronisation, conflits, références `LMA-AAAA-NNNN`) | Fait, testé de bout en bout ; pièces, photos et devis restent locaux |
-| Pièces non rectangulaires, synchronisation des pièces et devis, espace client, bibliothèque, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
+| Pièces de toute forme (mur par mur, angles), origine des cotes, contrôle de fermeture, plan, pièces synchronisées | Fait, testé (cas partagés application/serveur, bout en bout à deux téléphones) ; à valider sur 10 pièces réelles |
+| Synchronisation des devis et photos, espace client, bibliothèque, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
 
 ## Documentation
 

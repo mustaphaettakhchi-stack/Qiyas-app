@@ -5,7 +5,7 @@ import 'package:lamaalam/data/templates.dart';
 import 'package:lamaalam/domain/calculations.dart';
 import 'package:lamaalam/domain/models.dart';
 
-Room _room(String id, String name, double l, double w, double h, int doors, int windows) => Room(
+Room _room(String id, String name, double l, double w, double h, int doors, int windows) => Room.rectangle(
       id: id,
       name: name,
       length: l,

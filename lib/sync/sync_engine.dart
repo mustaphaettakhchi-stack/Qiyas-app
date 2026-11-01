@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -113,6 +114,15 @@ class SyncEngine extends ChangeNotifier {
       for (final p in _data.projects)
         if (p.dirty && p.syncError == null && !_inConflict('projects', p.id))
           {'entity': 'projects', 'id': p.id, 'base_version': p.serverVersion, 'deleted': p.deleted, 'data': p.toServer()},
+      // Les pièces après leur projet ; celles d'un projet supprimé ici ne sont pas envoyées.
+      for (final p in _data.projects)
+        if (!p.deleted)
+          for (final r in p.rooms)
+            if (r.dirty && r.syncError == null && !_inConflict('rooms', r.id))
+              {'entity': 'rooms', 'id': r.id, 'base_version': r.serverVersion, 'deleted': false, 'data': r.toServer(p.id)},
+      for (final t in _data.roomTombstones)
+        if (t.syncError == null && !_inConflict('rooms', t.id))
+          {'entity': 'rooms', 'id': t.id, 'base_version': t.serverVersion, 'deleted': true, 'data': <String, dynamic>{}},
     ];
     for (var i = 0; i < changes.length; i += 200) {
       final batch = changes.sublist(i, i + 200 > changes.length ? changes.length : i + 200);
@@ -128,12 +138,16 @@ class SyncEngine extends ChangeNotifier {
   }
 
   void _handleResult(String entity, String id, Map<String, dynamic> res, Map<String, dynamic>? sent) {
+    if (entity == 'rooms' && sent?['deleted'] == true) {
+      _handleTombstoneResult(id, res);
+      return;
+    }
     final local = _find(entity, id);
     if (local == null) return;
     final record = res['record'] == null ? null : Map<String, dynamic>.from(res['record'] as Map);
     // Une saisie faite pendant l'envoi garde la fiche « à envoyer ».
     final editedMeanwhile = sent != null &&
-        !mapEquals(_serverData(local), Map<String, dynamic>.from(sent['data'] as Map)) ||
+        jsonEncode(_serverData(local)) != jsonEncode(sent['data']) ||
         (sent != null && sent['deleted'] != local.deleted);
     switch (res['status']) {
       case 'applied':
@@ -171,6 +185,25 @@ class SyncEngine extends ChangeNotifier {
     }
   }
 
+  void _handleTombstoneResult(String id, Map<String, dynamic> res) {
+    final t = _data.roomTombstones.where((x) => x.id == id).firstOrNull;
+    if (t == null) return;
+    final record = res['record'] == null ? null : Map<String, dynamic>.from(res['record'] as Map);
+    switch (res['status']) {
+      case 'applied':
+        _data.roomTombstones.remove(t);
+      case 'conflict':
+        if (record != null && record['deleted'] == true) {
+          _data.roomTombstones.remove(t);
+        } else if (record != null) {
+          _addConflict('rooms', id, record, 'Pièce supprimée sur ce téléphone mais modifiée entre-temps sur le serveur.');
+        }
+      case 'rejected':
+        // Pièce déjà inaccessible ou disparue côté serveur : rien à supprimer de plus.
+        _data.roomTombstones.remove(t);
+    }
+  }
+
   // ---------- réception ----------
 
   Future<void> _pull() async {
@@ -191,6 +224,17 @@ class SyncEngine extends ChangeNotifier {
     final deleted = record['deleted'] == true;
     final local = _find(entity, id);
 
+    if (entity == 'rooms') {
+      final t = _data.roomTombstones.where((x) => x.id == id).firstOrNull;
+      if (t != null) {
+        if (deleted) {
+          _data.roomTombstones.remove(t);
+        } else if (record['version'] != t.serverVersion) {
+          _addConflict('rooms', id, record, 'Pièce supprimée sur ce téléphone mais modifiée entre-temps sur le serveur.');
+        }
+        return;
+      }
+    }
     if (local == null) {
       if (!deleted) _insertFromServer(entity, record);
       return;
@@ -208,7 +252,9 @@ class SyncEngine extends ChangeNotifier {
       return;
     }
     if (deleted) {
-      if (local is Project && local.hasLocalOnlyData) {
+      if (local is Room && local.photoPaths.isNotEmpty) {
+        _addConflict(entity, id, record, 'Pièce supprimée sur le serveur, mais ses photos sont sur ce téléphone.');
+      } else if (local is Project && local.hasLocalOnlyData) {
         _addConflict(entity, id, record,
             'Supprimé sur le serveur, mais ce téléphone contient des pièces, photos ou devis de ce projet.');
       } else {
@@ -220,17 +266,40 @@ class SyncEngine extends ChangeNotifier {
   }
 
   void _insertFromServer(String entity, Map<String, dynamic> record) {
-    if (entity == 'clients') {
-      _data.clients.add(Client(id: record['id'] as String));
-    } else {
-      _data.projects.add(Project(id: record['id'] as String));
+    final id = record['id'] as String;
+    switch (entity) {
+      case 'clients':
+        _data.clients.add(Client(id: id));
+      case 'projects':
+        _data.projects.add(Project(id: id));
+      case 'rooms':
+        final projectId = (record['data'] as Map)['project_id'] as String?;
+        final project = _data.projects.where((p) => p.id == projectId).firstOrNull;
+        if (project == null) {
+          // Pièce reçue avant son projet : rattachée à l'arrivée du projet.
+          _data.pendingRooms
+            ..removeWhere((r) => r['id'] == id)
+            ..add(record);
+          return;
+        }
+        project.rooms.add(Room(id: id, name: '', height: 2.8));
     }
-    _overwrite(_find(entity, record['id'] as String)!, record);
+    _overwrite(_find(entity, id)!, record);
+    if (entity == 'projects') _attachPendingRooms(id);
+  }
+
+  void _attachPendingRooms(String projectId) {
+    final waiting = _data.pendingRooms.where((r) => (r['data'] as Map)['project_id'] == projectId).toList();
+    for (final r in waiting) {
+      _data.pendingRooms.remove(r);
+      if (r['deleted'] != true && _find('rooms', r['id'] as String) == null) _insertFromServer('rooms', r);
+    }
   }
 
   void _overwrite(Syncable local, Map<String, dynamic> record) {
     final data = Map<String, dynamic>.from(record['data'] as Map);
     if (local is Client) local.applyServer(data);
+    if (local is Room) local.applyServer(data);
     if (local is Project) {
       local
         ..applyServer(data)
@@ -253,11 +322,23 @@ class SyncEngine extends ChangeNotifier {
 
   /// L'utilisateur garde sa version : elle sera renvoyée en s'appuyant sur la version du serveur.
   void keepMine(SyncConflict c) {
+    final t = c.entity == 'rooms' ? _data.roomTombstones.where((x) => x.id == c.id).firstOrNull : null;
+    if (t != null) {
+      t
+        ..serverVersion = c.server['version'] as int
+        ..syncError = null;
+    }
     final local = _find(c.entity, c.id);
     if (local != null) {
       local
         ..serverVersion = c.server['version'] as int
         ..markEdited();
+      // Projet restauré : ses pièces refusées faute de projet peuvent repartir.
+      if (local is Project) {
+        for (final r in local.rooms.where((r) => r.syncError != null)) {
+          r.syncError = null;
+        }
+      }
     }
     _data.conflicts.remove(c);
     state.mutate(() {});
@@ -266,6 +347,11 @@ class SyncEngine extends ChangeNotifier {
   /// L'utilisateur garde la version du serveur. Les pièces, photos et devis locaux d'un
   /// projet sont conservés, sauf si le projet a été supprimé sur le serveur.
   void keepServer(SyncConflict c) {
+    final t = c.entity == 'rooms' ? _data.roomTombstones.where((x) => x.id == c.id).firstOrNull : null;
+    if (t != null) {
+      _data.roomTombstones.remove(t);
+      if (c.server['deleted'] != true) _insertFromServer('rooms', c.server);
+    }
     final local = _find(c.entity, c.id);
     if (local != null) {
       if (c.server['deleted'] == true) {
@@ -281,31 +367,51 @@ class SyncEngine extends ChangeNotifier {
   // ---------- outils ----------
 
   Syncable? _find(String entity, String id) {
-    final list = entity == 'clients' ? _data.clients : _data.projects;
-    for (final x in list) {
-      if ((x as dynamic).id == id) return x;
+    switch (entity) {
+      case 'clients':
+        return _data.clients.where((c) => c.id == id).firstOrNull;
+      case 'projects':
+        return _data.projects.where((p) => p.id == id).firstOrNull;
+      default:
+        for (final p in _data.projects) {
+          for (final r in p.rooms) {
+            if (r.id == id) return r;
+          }
+        }
+        return null;
     }
-    return null;
   }
+
+  Project? _projectOfRoom(String roomId) => _data.projects.where((p) => p.rooms.any((r) => r.id == roomId)).firstOrNull;
 
   void _remove(String entity, String id) {
-    if (entity == 'clients') {
-      _data.clients.removeWhere((c) => c.id == id);
-    } else {
-      _data.projects.removeWhere((p) => p.id == id);
+    switch (entity) {
+      case 'clients':
+        _data.clients.removeWhere((c) => c.id == id);
+      case 'projects':
+        _data.projects.removeWhere((p) => p.id == id);
+      default:
+        _projectOfRoom(id)?.rooms.removeWhere((r) => r.id == id);
     }
   }
 
-  static Map<String, dynamic> _serverData(Syncable x) =>
-      x is Client ? x.toServer() : (x as Project).toServer();
+  Map<String, dynamic> _serverData(Syncable x) => switch (x) {
+        Client() => x.toServer(),
+        Project() => x.toServer(),
+        Room() => x.toServer(_projectOfRoom(x.id)?.id ?? ''),
+        _ => const {},
+      };
 
-  /// Compare après normalisation par le même code (formats de date, espaces…).
-  static bool _sameAsLocal(Syncable local, Map<String, dynamic> record) {
+  /// Compare après normalisation par le même code (formats de date, nombres, espaces…).
+  bool _sameAsLocal(Syncable local, Map<String, dynamic> record) {
     if ((record['deleted'] == true) != local.deleted) return false;
     final data = Map<String, dynamic>.from(record['data'] as Map);
-    final normalized = local is Client
-        ? (Client(id: local.id)..applyServer(data)).toServer()
-        : (Project(id: (local as Project).id)..applyServer(data)).toServer();
-    return mapEquals(normalized, _serverData(local));
+    final normalized = switch (local) {
+      Client() => (Client(id: local.id)..applyServer(data)).toServer(),
+      Project() => (Project(id: local.id)..applyServer(data)).toServer(),
+      Room() => (Room(id: local.id, name: '', height: 2.8)..applyServer(data)).toServer(_projectOfRoom(local.id)?.id ?? ''),
+      _ => const <String, dynamic>{},
+    };
+    return jsonEncode(normalized) == jsonEncode(_serverData(local));
   }
 }

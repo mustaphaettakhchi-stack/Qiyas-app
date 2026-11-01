@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lamaalam/data/app_state.dart';
 import 'package:lamaalam/data/local_store.dart';
+import 'package:lamaalam/domain/calculations.dart';
 import 'package:lamaalam/domain/models.dart';
 import 'package:lamaalam/session/api_client.dart';
 import 'package:lamaalam/session/auth_service.dart';
@@ -234,6 +235,45 @@ void main() {
     expect(client.syncError, isNull);
     expect(collab.pendingCount, 0);
 
+    // 5 bis. Pièce en L saisie mur par mur chez le collaborateur : reçue à l'identique.
+    final room = collab.addRoom(project);
+    collab.mutate(() {
+      room
+        ..name = 'Séjour'
+        ..height = 2.5
+        ..heightSource = MeasureSource.manual
+        ..walls = [
+          for (final (i, (l, a)) in [(6.0, 90.0), (2.0, 90.0), (2.0, 270.0), (2.0, 90.0), (4.0, 90.0), (4.0, 90.0)].indexed)
+            Wall(id: 'w$i', length: l, angle: a),
+        ]
+        ..openings = [Opening(id: 'porte', type: OpeningType.door, wallIndex: 4, width: 0.9, height: 2.1)];
+    }, touch: project, room: room);
+    await collabSync.syncNow();
+    expect(collab.pendingCount, 0, reason: collabSync.lastError);
+    await adminSync.syncNow();
+    final adminRoom = admin.project(project.id)!.rooms.single;
+    expect(roomMeasures(adminRoom).floor, closeTo(20, 1e-9));
+    expect(roomMeasures(adminRoom).walls, closeTo(48.11, 1e-9));
+    expect(adminRoom.unverifiedCount, 0);
+
+    // Modification simultanée d'une pièce : conflit ; le collaborateur garde la version du serveur.
+    admin.mutate(() => adminRoom.name = 'Salon', touch: adminProject, room: adminRoom);
+    collab.mutate(() => room.height = 2.6, touch: project, room: room);
+    await adminSync.syncNow();
+    await collabSync.syncNow();
+    final roomConflict = collab.data.conflicts.singleWhere((c) => c.entity == 'rooms');
+    collabSync.keepServer(roomConflict);
+    final collabRoom = collab.project(project.id)!.rooms.single;
+    expect(collabRoom.name, 'Salon');
+    expect(collabRoom.height, 2.5);
+
+    // Suppression d'une pièce par l'administrateur : elle disparaît chez le collaborateur.
+    admin.deleteRoom(adminProject, adminRoom);
+    await adminSync.syncNow();
+    expect(admin.data.roomTombstones, isEmpty);
+    await collabSync.syncNow();
+    expect(collab.project(project.id)!.rooms, isEmpty);
+
     // 6. Suppression par l'administrateur d'un projet qui a des pièces sur le téléphone du
     //    collaborateur : conflit plutôt que perte des pièces.
     collab.addRoom(project);
@@ -246,6 +286,10 @@ void main() {
     await collabSync.syncNow();
     await adminSync.syncNow();
     expect(admin.project(project.id), isNotNull, reason: 'projet restauré sur le serveur');
+    await collabSync.syncNow(); // la pièce refusée pendant la suppression repart après restauration
+    await adminSync.syncNow();
+    expect(admin.project(project.id)!.rooms, hasLength(1));
+    expect(collab.rejectedCount, 0);
 
     // 7. Un projet sans données locales supprimé ailleurs disparaît simplement.
     final p2 = admin.createProject(clientId: client.id);

@@ -3,6 +3,7 @@
 
 import 'dart:math' as math;
 
+import 'geometry.dart';
 import 'models.dart';
 
 double round2(double v) => (v * 100).roundToDouble() / 100;
@@ -60,23 +61,29 @@ class Measures {
       );
 }
 
-/// P = 2(L + l) ; sol = plafond = L × l ;
-/// murs nets = max(0, P × h − surfaces des ouvertures) ;
-/// plinthes = max(0, P − largeurs des portes) ; volume = L × l × h.
+/// Métré d'une pièce décrite mur par mur :
+/// périmètre = Σ longueurs des murs ; sol = plafond = aire du contour (formule du lacet) ;
+/// murs nets = Σ max(0, longueur × hauteur − ouvertures du mur) ;
+/// plinthes = max(0, périmètre − largeurs des portes) ; volume = sol × hauteur.
+/// Formules identiques côté serveur (backend/app/geometry.py), vérifiées sur shared/metre_cases.json.
 Measures roomMeasures(Room r) {
-  final perimeter = 2 * (r.length + r.width);
-  final floor = r.length * r.width;
-  final openingsArea = r.openings.fold<double>(0, (s, o) => s + o.area);
+  final perimeter = r.walls.fold<double>(0, (s, w) => s + w.length);
+  final shape = outline([for (final w in r.walls) w.length], [for (final w in r.walls) w.angle]);
+  var walls = 0.0;
+  for (var i = 0; i < r.walls.length; i++) {
+    final openingsArea = r.openings.where((o) => o.wallIndex == i).fold<double>(0, (s, o) => s + o.area);
+    walls += math.max(0.0, r.walls[i].length * r.height - openingsArea);
+  }
   final doorsWidth = r.openings
       .where((o) => o.type == OpeningType.door)
       .fold<double>(0, (s, o) => s + o.width);
   return Measures(
     perimeter: perimeter,
-    floor: floor,
-    ceiling: floor,
-    walls: math.max(0.0, perimeter * r.height - openingsArea),
+    floor: shape.area,
+    ceiling: shape.area,
+    walls: walls,
     skirting: math.max(0.0, perimeter - doorsWidth),
-    volume: floor * r.height,
+    volume: shape.area * r.height,
   );
 }
 
@@ -126,19 +133,45 @@ QuoteTotals quoteTotals(Project p, Quote q, double vatPercent) {
   return QuoteTotals(subtotal: subtotal, discount: discount, ht: ht, vat: vat, ttc: ttc, deposit: deposit);
 }
 
-/// Alertes de saisie : cote hors de 0,5 à 15 m, hauteur hors de 2,0 à 4,5 m.
+/// Alertes de saisie. Les plages sont indicatives : elles avertissent sans bloquer.
 List<String> roomWarnings(Room r) {
+  String m(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
   final out = <String>[];
-  void check(String label, double v) {
-    if (v < 0.5 || v > 15) {
-      out.add('$label de ${v.toStringAsFixed(2).replaceAll('.', ',')} m : vérifiez la cote (attendu entre 0,50 et 15 m).');
-    }
+  if (r.walls.length < 3) {
+    out.add('Une pièce doit avoir au moins 3 murs.');
+    return out;
   }
-
-  check('Longueur', r.length);
-  check('Largeur', r.width);
-  if (r.height < 2 || r.height > 4.5) {
-    out.add('Hauteur de ${r.height.toStringAsFixed(2).replaceAll('.', ',')} m inhabituelle (attendu entre 2,00 et 4,50 m).');
+  final shape = outline([for (final w in r.walls) w.length], [for (final w in r.walls) w.angle]);
+  if (!shape.closes) {
+    out.add('Les cotes ne se referment pas : il manque ${m(shape.closureError)} m pour revenir au point de départ. '
+        'Vérifiez la longueur des murs et les angles.');
+  }
+  if (shape.angleSumError.abs() > 0.5) {
+    out.add('La somme des angles devrait être ${((r.walls.length - 2) * 180).toString()}° '
+        '(écart de ${shape.angleSumError.toStringAsFixed(1).replaceAll('.', ',')}°).');
+  }
+  if (shape.selfIntersecting) out.add('Des murs se croisent : vérifiez l\'ordre des murs et les angles.');
+  for (var i = 0; i < r.walls.length; i++) {
+    final l = r.walls[i].length;
+    if (l < 0.3 || l > 30) out.add('Mur ${i + 1} : ${m(l)} m, vérifiez la cote (attendu entre 0,30 et 30 m).');
+  }
+  if (r.height < 1.8 || r.height > 6) {
+    out.add('Hauteur de ${m(r.height)} m inhabituelle (attendu entre 1,80 et 6,00 m).');
+  }
+  for (final o in r.openings) {
+    final label = o.type == OpeningType.door ? 'Porte' : 'Fenêtre';
+    if (o.wallIndex < 0 || o.wallIndex >= r.walls.length) {
+      out.add('$label rattachée à un mur qui n\'existe plus : choisissez son mur.');
+    } else if (o.width > r.walls[o.wallIndex].length) {
+      out.add('$label plus large que le mur ${o.wallIndex + 1}.');
+    }
+    if (o.height > r.height) out.add('$label plus haute que la pièce.');
   }
   return out;
+}
+
+/// La pièce peut-elle alimenter un métré validé ? (contour fermé, murs ne se croisant pas)
+bool roomGeometryValid(Room r) {
+  final shape = outline([for (final w in r.walls) w.length], [for (final w in r.walls) w.angle]);
+  return shape.valid && r.openings.every((o) => o.wallIndex >= 0 && o.wallIndex < r.walls.length);
 }

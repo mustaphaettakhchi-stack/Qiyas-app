@@ -184,3 +184,108 @@ def test_row_level_security_in_database(client, db):
         except Exception as exc:  # noqa: BLE001
             assert "row-level security" in str(exc)
     engine.dispose()
+
+
+# ---------- pièces (lot 1.3) ----------
+
+
+def _room_change(rid, pid, base=None, deleted=False, walls=None, openings=None, **extra):
+    data = {
+        "project_id": str(pid),
+        "name": "Salon",
+        "height_m": 2.8,
+        "walls": walls or [{"length": l, "angle": 90} for l in (5.2, 4.1, 5.2, 4.1)],
+        "openings": openings or [{"type": "door", "wall": 0, "width": 0.83, "height": 2.04}],
+        **extra,
+    }
+    return {"entity": "rooms", "id": str(rid), "base_version": base, "deleted": deleted, "data": data}
+
+
+def test_room_sync_roundtrip(client, db):
+    _, _, h = _staff(client, db, Role.collaborator)
+    pid, rid = uuid7(), uuid7()
+    res = _push(client, h, _project_change(pid), _room_change(rid, pid))
+    assert [r["status"] for r in res] == ["applied", "applied"]
+    room = res[1]["record"]["data"]
+    assert room["height_m"] == 2.8 and isinstance(room["height_m"], float)
+    assert room["walls"][0]["length"] == 5.2
+    pulled = {r["entity"] for r in _pull(client, h)["records"]}
+    assert pulled == {"projects", "rooms"}
+
+
+def test_room_measures_stored_by_server(client, db):
+    org, _, h = _staff(client, db)
+    pid, rid = uuid7(), uuid7()
+    l_shape = [{"length": l, "angle": a} for l, a in ((6, 90), (2, 90), (2, 270), (2, 90), (4, 90), (4, 90))]
+    _push(client, h, _project_change(pid), _room_change(rid, pid, walls=l_shape, openings=[]))
+    from app.db import bind_organization
+
+    bind_organization(db, org.id)
+    row = db.execute(
+        text("SELECT computed_floor_area_m2, computed_perimeter_m, closure_error_m FROM rooms WHERE id = :i"),
+        {"i": str(rid)},
+    ).one()
+    assert float(row[0]) == 20.0 and float(row[1]) == 20.0 and float(row[2]) == 0.0
+
+
+def test_invalid_rooms_rejected(client, db):
+    _, _, h = _staff(client, db)
+    pid = uuid7()
+    _push(client, h, _project_change(pid))
+    bad = [
+        _room_change(uuid7(), pid, walls=[{"length": 3, "angle": 90}, {"length": 3, "angle": 90}]),  # 2 murs
+        _room_change(uuid7(), pid, openings=[{"type": "door", "wall": 9, "width": 0.8, "height": 2}]),
+        _room_change(uuid7(), pid, walls=[{"length": -1, "angle": 90}] * 4),
+        _room_change(uuid7(), pid, height_m=0),
+        _room_change(uuid7(), pid, height_source="invente"),
+        _room_change(uuid7(), uuid7()),  # projet inexistant
+    ]
+    assert [r["status"] for r in _push(client, h, *bad)] == ["rejected"] * len(bad)
+
+
+def test_rooms_follow_project_visibility(client, db):
+    org, _, h_admin = _staff(client, db)
+    _, karim, h_karim = _staff(client, db, Role.collaborator, org=org)
+    _, _, h_sara = _staff(client, db, Role.collaborator, org=org)
+    cid, pid, rid = uuid7(), uuid7(), uuid7()
+    _push(client, h_karim, _client_change(cid), _project_change(pid, cid), _room_change(rid, pid))
+    sara_cursor = _pull(client, h_sara)["cursor"]
+    assert _push(client, h_sara, _room_change(uuid7(), pid))[0]["status"] == "rejected"
+    assert _push(client, h_sara, _room_change(rid, pid, base=1))[0]["status"] == "rejected"
+
+    # L'administrateur confie le projet à Sara : elle reçoit le projet, son client ET ses pièces,
+    # même si son curseur est déjà au-delà de leur création.
+    sara_id = client.get("/api/v1/auth/me", headers=h_sara).json()["id"]
+    _push(client, h_admin, _project_change(pid, cid, base=1, manager_id=sara_id))
+    got = {(r["entity"], r["id"]) for r in _pull(client, h_sara, sara_cursor)["records"]}
+    assert got == {("clients", str(cid)), ("projects", str(pid)), ("rooms", str(rid))}
+
+
+def test_project_deletion_cascades_to_rooms_and_restores(client, db):
+    _, _, h = _staff(client, db)
+    pid, rid = uuid7(), uuid7()
+    _push(client, h, _project_change(pid), _room_change(rid, pid))
+    cursor = _pull(client, h)["cursor"]
+    _push(client, h, _project_change(pid, base=1, deleted=True))
+    recs = {r["entity"]: r for r in _pull(client, h, cursor)["records"]}
+    assert recs["projects"]["deleted"] and recs["rooms"]["deleted"]
+    cursor = _pull(client, h)["cursor"]
+    # Restauration du projet (conflit résolu en « garder ma version ») : la pièce revient aussi.
+    assert _push(client, h, _project_change(pid, base=2))[0]["status"] == "applied"
+    recs = {r["entity"]: r for r in _pull(client, h, cursor)["records"]}
+    assert recs["projects"]["deleted"] is False and recs["rooms"]["deleted"] is False
+    # Une pièce ne change pas de projet.
+    other = uuid7()
+    _push(client, h, _project_change(other))
+    version = recs["rooms"]["version"]
+    assert _push(client, h, _room_change(rid, other, base=version))[0]["status"] == "rejected"
+
+
+def test_room_concurrent_edit_is_conflict(client, db):
+    org, _, h1 = _staff(client, db)
+    _, _, h2 = _staff(client, db, org=org)
+    pid, rid = uuid7(), uuid7()
+    _push(client, h1, _project_change(pid), _room_change(rid, pid))
+    assert _push(client, h1, _room_change(rid, pid, base=1, name="Séjour"))[0]["status"] == "applied"
+    res = _push(client, h2, _room_change(rid, pid, base=1, name="Salle à manger"))[0]
+    assert res["status"] == "conflict" and res["record"]["data"]["name"] == "Séjour"

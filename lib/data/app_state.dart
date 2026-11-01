@@ -64,8 +64,9 @@ class AppState extends ChangeNotifier {
   /// Applique une modification, puis sauvegarde et notifie.
   /// [meta] : la modification touche des informations partagées avec le serveur
   /// (fiche projet ou client) et devra être synchronisée.
-  void mutate(VoidCallback change, {Project? touch, bool meta = false, Client? client}) {
+  void mutate(VoidCallback change, {Project? touch, bool meta = false, Client? client, Room? room}) {
     change();
+    room?.markEdited();
     if (touch != null) {
       touch.updatedAt = DateTime.now();
       if (meta) touch.markEdited();
@@ -92,10 +93,15 @@ class AppState extends ChangeNotifier {
   /// Fiches en attente d'envoi (y compris les suppressions), hors refus et conflits.
   int get pendingCount =>
       data.clients.where((c) => c.dirty && c.syncError == null).length +
-      data.projects.where((p) => p.dirty && p.syncError == null).length;
+      data.projects.where((p) => p.dirty && p.syncError == null).length +
+      data.projects.fold<int>(0, (n, p) => n + p.rooms.where((r) => r.dirty && r.syncError == null).length) +
+      data.roomTombstones.where((t) => t.syncError == null).length;
 
   int get rejectedCount =>
-      data.clients.where((c) => c.syncError != null).length + data.projects.where((p) => p.syncError != null).length;
+      data.clients.where((c) => c.syncError != null).length +
+      data.projects.where((p) => p.syncError != null).length +
+      data.projects.fold<int>(0, (n, p) => n + p.rooms.where((r) => r.syncError != null).length) +
+      data.roomTombstones.where((t) => t.syncError != null).length;
 
   Project? project(String id) {
     for (final p in data.projects) {
@@ -160,20 +166,7 @@ class AppState extends ChangeNotifier {
       city: src.city,
       notes: src.notes,
       photoPaths: List.of(src.photoPaths),
-      rooms: [
-        for (final r in copy.rooms)
-          Room(
-            id: newId(),
-            name: r.name,
-            length: r.length,
-            width: r.width,
-            height: r.height,
-            openings: [for (final o in r.openings) Opening(id: newId(), type: o.type, width: o.width, height: o.height)],
-            photoPaths: r.photoPaths,
-            planX: r.planX,
-            planY: r.planY,
-          ),
-      ],
+      rooms: [for (final r in copy.rooms) _copyRoom(r)],
     );
     mutate(() => data.projects.add(p), touch: p, meta: true);
     return p;
@@ -184,24 +177,47 @@ class AppState extends ChangeNotifier {
   // ---------- pièces ----------
   static const roomNames = ['Salon', 'Chambre', 'Cuisine', 'Salle de bain', 'Couloir', 'Autre'];
 
+  /// Nouvelle pièce : murs à mesurer (longueurs nulles), hauteur reprise de la pièce
+  /// précédente ou valeur standard de 2,80 m marquée « à vérifier ».
   Room addRoom(Project p) {
     final previous = p.rooms.isEmpty ? null : p.rooms.last;
-    final r = Room(
+    final r = Room.rectangle(
       id: newId(),
       name: roomNames[p.rooms.length.clamp(0, roomNames.length - 1)],
-      length: 3,
-      width: 3,
+      length: 0,
+      width: 0,
       height: previous?.height ?? 2.8,
-      openings: [
-        Opening.standard(newId(), OpeningType.door),
-        Opening.standard(newId(), OpeningType.window),
-      ],
-    );
-    mutate(() => p.rooms.add(r), touch: p);
+    )..heightSource = previous?.heightSource ?? MeasureSource.standard;
+    for (var i = 0; i < r.walls.length; i++) {
+      r.walls[i] = Wall(id: newId(), length: 0, lengthSource: MeasureSource.standard);
+    }
+    mutate(() => p.rooms.add(r), touch: p, room: r);
     return r;
   }
 
-  void deleteRoom(Project p, Room r) => mutate(() => p.rooms.removeWhere((x) => x.id == r.id), touch: p);
+  Room _copyRoom(Room src) => Room.fromJson({...src.toJson(), 'id': newId(), 'sv': null, 'dirty': true})
+    ..walls = [for (final w in src.walls) Wall(id: newId(), length: w.length, lengthSource: w.lengthSource, angle: w.angle)]
+    ..openings = [
+      for (final o in src.openings)
+        Opening(
+          id: newId(),
+          type: o.type,
+          wallIndex: o.wallIndex,
+          width: o.width,
+          height: o.height,
+          widthSource: o.widthSource,
+          heightSource: o.heightSource,
+        ),
+    ];
+
+  /// Supprime une pièce ; si elle était connue du serveur, la suppression lui sera envoyée.
+  void deleteRoom(Project p, Room r) => mutate(() {
+        p.rooms.removeWhere((x) => x.id == r.id);
+        final version = r.serverVersion;
+        if (version != null) {
+          data.roomTombstones.add(RoomTombstone(id: r.id, projectId: p.id, serverVersion: version));
+        }
+      }, touch: p);
 
   // ---------- prestations ----------
   void addPrestation() => mutate(() => data.prestations.add(Prestation(id: newId(), name: 'Nouvelle prestation')));

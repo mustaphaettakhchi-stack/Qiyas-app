@@ -28,7 +28,7 @@ void main() {
 
   group('Métré', () {
     test('une pièce simple', () {
-      final r = Room(id: 'a', name: 'Test', length: 4, width: 3, height: 2.5, openings: [
+      final r = Room.rectangle(id: 'a', name: 'Test', length: 4, width: 3, height: 2.5, openings: [
         Opening.standard('d', OpeningType.door),
         Opening.standard('w', OpeningType.window),
       ]);
@@ -41,13 +41,14 @@ void main() {
     });
 
     test('jamais négatif', () {
-      final r = Room(id: 'b', name: 'Placard', length: 0.5, width: 0.5, height: 2, openings: [
+      final r = Room.rectangle(id: 'b', name: 'Placard', length: 0.5, width: 0.5, height: 2, openings: [
         Opening.standard('d1', OpeningType.door),
         Opening.standard('d2', OpeningType.door),
         Opening.standard('d3', OpeningType.door),
       ]);
       final m = roomMeasures(r);
-      expect(m.walls, 0);
+      // Calcul mur par mur : les 3 murs percés tombent à 0 (jamais négatif), le 4e garde 1 m².
+      expect(m.walls, closeTo(1.0, 1e-9));
       expect(m.skirting, 0);
     });
 
@@ -90,7 +91,7 @@ void main() {
         l.frozenQuantity = lineQuantity(p, l);
       }
       final before = quoteTotals(p, q, 20).ttc;
-      p.rooms.first.length = 10;
+      p.rooms.first.walls.first.length = 10;
       expect(quoteTotals(p, q, 20).ttc, before);
     });
 

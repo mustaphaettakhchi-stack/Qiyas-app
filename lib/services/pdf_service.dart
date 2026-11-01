@@ -135,8 +135,11 @@ class PdfService {
           txt('Sol ${fmt2(m.floor)} m² - plafond ${fmt2(m.ceiling)} m² - murs nets ${fmt2(m.walls)} m² - '
               'plinthes ${fmt2(m.skirting)} ml - ${project.rooms.length} pièce(s)'),
           for (final r in project.rooms)
-            txt('${r.name} : ${fmt2(r.length)} x ${fmt2(r.width)} x ${fmt2(r.height)} m, '
-                '${r.doorCount} porte(s), ${r.windowCount} fenêtre(s)', color: grey),
+            txt(
+                '${r.name} : ${r.isRectangle ? '${fmt2(r.length)} x ${fmt2(r.width)} m' : '${r.walls.length} murs, '
+                    'périmètre ${fmt2(roomMeasures(r).perimeter)} m'}, sol ${fmt2(roomMeasures(r).floor)} m², '
+                    'hauteur ${fmt2(r.height)} m, ${r.doorCount} porte(s), ${r.windowCount} fenêtre(s)',
+                color: grey),
           pw.SizedBox(height: 18),
           txt('Devis valable ${company.validityDays} jours. ${company.footer}', color: grey),
           pw.SizedBox(height: 24),

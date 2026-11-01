@@ -127,81 +127,240 @@ class Prestation {
       );
 }
 
-class Opening {
-  Opening({required this.id, required this.type, required this.width, required this.height});
+/// Origine d'une cote (docs/ARCHITECTURE.md §5).
+abstract final class MeasureSource {
+  /// Saisie par l'utilisateur (mètre, télémètre lu à l'écran) : cote vérifiée.
+  static const manual = 'manual';
 
-  factory Opening.standard(String id, OpeningType type) => type == OpeningType.door
-      ? Opening(id: id, type: type, width: kDoorWidth, height: kDoorHeight)
-      : Opening(id: id, type: type, width: kWindowWidth, height: kWindowHeight);
+  /// Reçue d'un télémètre connecté : cote vérifiée.
+  static const laser = 'laser';
+
+  /// Valeur standard proposée par l'application : cote estimée, à vérifier.
+  static const standard = 'default';
+
+  static const all = [manual, laser, standard];
+
+  static bool verified(String source) => source != standard;
+}
+
+double _clampAngle(double a) => a.isFinite && a > 0 && a < 360 ? a : 90;
+
+class Wall {
+  Wall({required this.id, required this.length, this.lengthSource = MeasureSource.manual, this.angle = 90});
+
+  final String id;
+  double length;
+  String lengthSource;
+
+  /// Angle intérieur au coin qui termine ce mur, en degrés (90 par défaut, 270 si rentrant).
+  double angle;
+
+  Map<String, dynamic> toJson() => {'id': id, 'length': length, 'length_source': lengthSource, 'angle': angle};
+
+  factory Wall.fromJson(Map<String, dynamic> j) => Wall(
+        id: _s(j['id']),
+        length: _d(j['length']),
+        lengthSource: _s(j['length_source'], MeasureSource.manual),
+        angle: _clampAngle(_d(j['angle'], 90)),
+      );
+}
+
+class Opening {
+  Opening({
+    required this.id,
+    required this.type,
+    required this.width,
+    required this.height,
+    this.wallIndex = 0,
+    this.widthSource = MeasureSource.manual,
+    this.heightSource = MeasureSource.manual,
+  });
+
+  /// Dimensions standard, marquées « à vérifier » tant qu'elles ne sont pas mesurées.
+  factory Opening.standard(String id, OpeningType type, {int wallIndex = 0}) => Opening(
+        id: id,
+        type: type,
+        wallIndex: wallIndex,
+        width: type == OpeningType.door ? kDoorWidth : kWindowWidth,
+        height: type == OpeningType.door ? kDoorHeight : kWindowHeight,
+        widthSource: MeasureSource.standard,
+        heightSource: MeasureSource.standard,
+      );
 
   final String id;
   OpeningType type;
+  int wallIndex;
   double width;
   double height;
+  String widthSource;
+  String heightSource;
 
   double get area => width * height;
 
-  Map<String, dynamic> toJson() => {'id': id, 'type': type.name, 'w': width, 'h': height};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type.name,
+        'wall': wallIndex,
+        'width': width,
+        'height': height,
+        'width_source': widthSource,
+        'height_source': heightSource,
+      };
 
   factory Opening.fromJson(Map<String, dynamic> j) => Opening(
         id: _s(j['id']),
         type: _enumByName(OpeningType.values, j['type'], OpeningType.door),
-        width: _d(j['w']),
-        height: _d(j['h']),
+        wallIndex: _i(j['wall']),
+        width: _d(j['width'] ?? j['w']),
+        height: _d(j['height'] ?? j['h']),
+        // Ouvertures Qiyas : dimensions standard jamais confirmées.
+        widthSource: _s(j['width_source'], j.containsKey('w') ? MeasureSource.standard : MeasureSource.manual),
+        heightSource: _s(j['height_source'], j.containsKey('h') ? MeasureSource.standard : MeasureSource.manual),
       );
 }
 
-class Room {
+/// Pièce décrite mur par mur. Partagée avec le serveur (table rooms).
+class Room with Syncable {
   Room({
     required this.id,
     required this.name,
-    required this.length,
-    required this.width,
     required this.height,
+    this.heightSource = MeasureSource.manual,
+    List<Wall>? walls,
     List<Opening>? openings,
     List<String>? photoPaths,
+    this.level = 'RDC',
     this.planX,
     this.planY,
-  })  : openings = openings ?? [],
+  })  : walls = walls ?? [],
+        openings = openings ?? [],
         photoPaths = photoPaths ?? [];
+
+  /// Pièce rectangulaire : 4 murs (longueur, largeur, longueur, largeur) à angle droit.
+  /// Les ouvertures sans mur désigné sont réparties sur les murs dans l'ordre.
+  factory Room.rectangle({
+    required String id,
+    required String name,
+    required double length,
+    required double width,
+    required double height,
+    List<Opening>? openings,
+    String source = MeasureSource.manual,
+  }) {
+    final ops = openings ?? [];
+    for (var i = 0; i < ops.length; i++) {
+      ops[i].wallIndex = i % 4;
+    }
+    return Room(
+      id: id,
+      name: name,
+      height: height,
+      heightSource: source,
+      walls: [
+        for (var i = 0; i < 4; i++) Wall(id: '$id-w$i', length: i.isEven ? length : width, lengthSource: source),
+      ],
+      openings: ops,
+    );
+  }
 
   final String id;
   String name;
-  double length;
-  double width;
+  String level;
   double height;
+  String heightSource;
+  List<Wall> walls;
   List<Opening> openings;
   List<String> photoPaths;
   double? planX;
   double? planY;
 
+  bool get isRectangle =>
+      walls.length == 4 &&
+      walls.every((w) => w.angle == 90) &&
+      walls[0].length == walls[2].length &&
+      walls[1].length == walls[3].length;
+
+  /// Longueur et largeur pour une pièce rectangulaire (murs 1 et 2).
+  double get length => walls.isEmpty ? 0 : walls[0].length;
+  double get width => walls.length < 2 ? 0 : walls[1].length;
+
   int get doorCount => openings.where((o) => o.type == OpeningType.door).length;
   int get windowCount => openings.where((o) => o.type == OpeningType.window).length;
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'L': length,
-        'W': width,
-        'H': height,
-        'openings': openings.map((o) => o.toJson()).toList(),
-        'photos': photoPaths,
-        'x': planX,
-        'y': planY,
+  /// Nombre de cotes encore à la valeur standard (à vérifier sur place).
+  int get unverifiedCount =>
+      (MeasureSource.verified(heightSource) ? 0 : 1) +
+      walls.where((w) => !MeasureSource.verified(w.lengthSource)).length +
+      openings.fold<int>(0, (n, o) => n + (MeasureSource.verified(o.widthSource) ? 0 : 1) + (MeasureSource.verified(o.heightSource) ? 0 : 1));
+
+  Map<String, dynamic> toServer(String projectId) => {
+        'project_id': projectId,
+        'name': name.trim(),
+        'level_name': level,
+        'height_m': height,
+        'height_source': heightSource,
+        'walls': [for (final w in walls) w.toJson()],
+        'openings': [for (final o in openings) o.toJson()],
+        'plan_x': planX,
+        'plan_y': planY,
       };
 
-  factory Room.fromJson(Map<String, dynamic> j) => Room(
+  void applyServer(Map<String, dynamic> d) {
+    name = _s(d['name']);
+    level = _s(d['level_name'], 'RDC');
+    height = _d(d['height_m'], 2.8);
+    heightSource = _s(d['height_source'], MeasureSource.manual);
+    walls = [for (final w in d['walls'] as List? ?? const []) Wall.fromJson(Map<String, dynamic>.from(w as Map))];
+    openings = [for (final o in d['openings'] as List? ?? const []) Opening.fromJson(Map<String, dynamic>.from(o as Map))];
+    planX = (d['plan_x'] as num?)?.toDouble();
+    planY = (d['plan_y'] as num?)?.toDouble();
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        ...toServer(''),
+        'photos': photoPaths,
+        ...syncJson(),
+      };
+
+  factory Room.fromJson(Map<String, dynamic> j) {
+    if (!j.containsKey('walls') && j.containsKey('L')) {
+      // Format Qiyas : pièce rectangulaire, hauteur saisie, ouvertures sans mur désigné.
+      return Room.rectangle(
         id: _s(j['id']),
         name: _s(j['name']),
         length: _d(j['L']),
         width: _d(j['W']),
         height: _d(j['H'], 2.8),
-        openings: (j['openings'] as List? ?? [])
-            .map((e) => Opening.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        photoPaths: _strings(j['photos']),
-        planX: (j['x'] as num?)?.toDouble(),
-        planY: (j['y'] as num?)?.toDouble(),
+        openings: [for (final o in j['openings'] as List? ?? const []) Opening.fromJson(Map<String, dynamic>.from(o as Map))],
+      )
+        ..photoPaths = _strings(j['photos'])
+        ..planX = (j['x'] as num?)?.toDouble()
+        ..planY = (j['y'] as num?)?.toDouble();
+    }
+    return Room(id: _s(j['id']), name: '', height: 2.8)
+      ..applyServer(j)
+      ..photoPaths = _strings(j['photos'])
+      ..readSync(j);
+  }
+}
+
+/// Pièce supprimée sur le téléphone, en attente d'envoi de la suppression au serveur.
+class RoomTombstone {
+  RoomTombstone({required this.id, required this.projectId, required this.serverVersion, this.syncError});
+
+  final String id;
+  final String projectId;
+  int serverVersion;
+  String? syncError;
+
+  Map<String, dynamic> toJson() => {'id': id, 'project': projectId, 'sv': serverVersion, 'serr': syncError};
+
+  factory RoomTombstone.fromJson(Map<String, dynamic> j) => RoomTombstone(
+        id: _s(j['id']),
+        projectId: _s(j['project']),
+        serverVersion: _i(j['sv']),
+        syncError: j['serr'] as String?,
       );
 }
 
@@ -471,14 +630,16 @@ class Project with Syncable {
   String legacyClientName;
   String legacyClientPhone;
 
-  // Données encore locales au téléphone (synchronisées aux lots 1.3 et 1.6).
+  // Pièces : synchronisées séparément (table rooms). Photos et devis : encore locaux.
   List<String> photoPaths;
   List<Room> rooms;
   List<Quote> quotes;
   DateTime updatedAt;
 
   bool get archived => status == 'archived';
-  bool get hasLocalOnlyData => rooms.isNotEmpty || quotes.isNotEmpty || photoPaths.isNotEmpty;
+  /// Données présentes uniquement sur ce téléphone (perdues si le projet était supprimé ici).
+  bool get hasLocalOnlyData =>
+      quotes.isNotEmpty || photoPaths.isNotEmpty || rooms.any((r) => r.dirty || r.photoPaths.isNotEmpty);
   Quote? get lastQuote => quotes.isEmpty ? null : quotes.last;
 
   Map<String, dynamic> toServer() => {
@@ -582,18 +743,26 @@ class AppData {
     required this.projects,
     List<Client>? clients,
     List<SyncConflict>? conflicts,
+    List<RoomTombstone>? roomTombstones,
+    List<Map<String, dynamic>>? pendingRooms,
     this.quoteCounter = 0,
     this.syncCursor = 0,
     this.syncAccount,
     this.lastSyncAt,
   })  : clients = clients ?? [],
-        conflicts = conflicts ?? [];
+        conflicts = conflicts ?? [],
+        roomTombstones = roomTombstones ?? [],
+        pendingRooms = pendingRooms ?? [];
 
   Company company;
   List<Prestation> prestations;
   List<Project> projects;
   List<Client> clients;
   List<SyncConflict> conflicts;
+  List<RoomTombstone> roomTombstones;
+
+  /// Pièces reçues du serveur avant leur projet (rattachées à son arrivée).
+  List<Map<String, dynamic>> pendingRooms;
 
   /// Compteur local de numérotation des devis (numérotation serveur au lot 1.6).
   int quoteCounter;
@@ -604,12 +773,14 @@ class AppData {
   DateTime? lastSyncAt;
 
   Map<String, dynamic> toJson() => {
-        'schema': 2,
+        'schema': 3,
         'company': company.toJson(),
         'prestations': prestations.map((p) => p.toJson()).toList(),
         'projects': projects.map((p) => p.toJson()).toList(),
         'clients': clients.map((c) => c.toJson()).toList(),
         'conflicts': conflicts.map((c) => c.toJson()).toList(),
+        'room_tombstones': roomTombstones.map((t) => t.toJson()).toList(),
+        'pending_rooms': pendingRooms,
         'counter': quoteCounter,
         'sync_cursor': syncCursor,
         'sync_account': syncAccount,
@@ -630,6 +801,10 @@ class AppData {
         conflicts: (j['conflicts'] as List? ?? [])
             .map((e) => SyncConflict.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
+        roomTombstones: (j['room_tombstones'] as List? ?? [])
+            .map((e) => RoomTombstone.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        pendingRooms: (j['pending_rooms'] as List? ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
         quoteCounter: _i(j['counter']),
         syncCursor: _i(j['sync_cursor']),
         syncAccount: j['sync_account'] as String?,

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -247,6 +248,35 @@ class Project(Synced, Base):
     site_address: Mapped[str] = mapped_column(Text, default="")
     site_city: Mapped[str] = mapped_column(String(100), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class Room(Synced, Base):
+    """Pièce décrite mur par mur (lot 1.3).
+
+    Murs et ouvertures sont stockés en JSONB dans la fiche de la pièce : la pièce est
+    l'unité de synchronisation et de conflit (voir docs/DATABASE_SCHEMA.md). Les surfaces
+    sont recalculées par le serveur à chaque écriture (app/geometry.py).
+    """
+
+    __tablename__ = "rooms"
+    __table_args__ = (
+        CheckConstraint("height_m > 0 AND height_m <= 20", name="ck_rooms_height"),
+        CheckConstraint("height_source IN ('manual', 'laser', 'default')", name="ck_rooms_height_source"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100), default="")
+    level_name: Mapped[str] = mapped_column(String(30), default="RDC")
+    height_m: Mapped[float] = mapped_column(Numeric(6, 3))
+    height_source: Mapped[str] = mapped_column(String(10), default="manual")
+    walls: Mapped[list] = mapped_column(JSONB, default=list)
+    openings: Mapped[list] = mapped_column(JSONB, default=list)
+    plan_x: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    plan_y: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    computed_floor_area_m2: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
+    computed_perimeter_m: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
+    closure_error_m: Mapped[float] = mapped_column(Numeric(8, 3), default=0)
+    calc_version: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class OrgCounter(Base):

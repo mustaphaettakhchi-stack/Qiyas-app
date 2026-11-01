@@ -90,9 +90,20 @@ class _ConflictCard extends StatelessWidget {
     'manager_id': 'Responsable',
   };
 
+  static const _roomFields = {
+    'name': 'Nom de la pièce',
+    'height_m': 'Hauteur',
+    'walls': 'Murs',
+    'openings': 'Ouvertures',
+    'plan_x': 'Position sur le plan',
+  };
+
   String _show(AppState s, String key, Object? v) {
     if (v == null || v == '') return '—';
     return switch (key) {
+      'walls' => (v as List).map((w) => fmt2(((w as Map)['length'] as num).toDouble())).join(' / '),
+      'openings' => '${(v as List).length} ouverture(s)',
+      'height_m' => '${fmt2((v as num).toDouble())} m',
       'client_id' => s.client(v as String)?.displayName ?? 'autre client',
       'project_type' => kProjectTypes[v] ?? '$v',
       'property_kind' => kPropertyKinds[v] ?? '$v',
@@ -110,18 +121,26 @@ class _ConflictCard extends StatelessWidget {
     final s = context.watch<AppState>();
     final engine = context.read<SyncEngine>();
     final isClient = conflict.entity == 'clients';
+    final isRoom = conflict.entity == 'rooms';
+    final roomProject = isRoom ? s.data.projects.where((p) => p.rooms.any((r) => r.id == conflict.id)).firstOrNull : null;
     final local = isClient
         ? s.data.clients.where((c) => c.id == conflict.id).firstOrNull?.toServer()
-        : s.data.projects.where((p) => p.id == conflict.id).firstOrNull?.toServer();
+        : isRoom
+            ? roomProject?.rooms.firstWhere((r) => r.id == conflict.id).toServer(roomProject.id)
+            : s.data.projects.where((p) => p.id == conflict.id).firstOrNull?.toServer();
+    final localDeleted = isRoom && local == null;
     final serverDeleted = conflict.server['deleted'] == true;
     final serverData = Map<String, dynamic>.from(conflict.server['data'] as Map? ?? {});
-    final fields = isClient ? _clientFields : _projectFields;
+    final fields = isClient ? _clientFields : (isRoom ? _roomFields : _projectFields);
     final title = isClient
         ? 'Client · ${local?['display_name'] ?? serverData['display_name'] ?? ''}'
-        : 'Projet · ${conflict.server['reference'] ?? ''} ${local?['name'] ?? ''}';
+        : isRoom
+            ? 'Pièce · ${local?['name'] ?? serverData['name'] ?? ''}'
+            : 'Projet · ${conflict.server['reference'] ?? ''} ${local?['name'] ?? ''}';
+    String norm(String key, Object? v) => key == 'walls' || key == 'openings' ? _show(s, key, v) : '$v';
     final diffs = [
       for (final e in fields.entries)
-        if (local != null && !serverDeleted && '${local[e.key]}' != '${serverData[e.key]}') e,
+        if (local != null && !serverDeleted && norm(e.key, local[e.key]) != norm(e.key, serverData[e.key])) e,
     ];
 
     return Card(
@@ -132,6 +151,7 @@ class _ConflictCard extends StatelessWidget {
           Text(conflict.reason),
           const SizedBox(height: 8),
           if (serverDeleted) const Text('Sur le serveur : supprimé.'),
+          if (localDeleted) const Text('Sur ce téléphone : supprimée.'),
           for (final e in diffs) ...[
             Text(e.value, style: Theme.of(context).textTheme.labelLarge),
             Text('Ce téléphone : ${_show(s, e.key, local![e.key])}'),

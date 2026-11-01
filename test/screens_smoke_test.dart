@@ -11,7 +11,9 @@ import 'package:lamaalam/session/session_store.dart';
 import 'package:lamaalam/sync/sync_engine.dart';
 import 'package:lamaalam/ui/home_shell.dart';
 import 'package:lamaalam/ui/screens/clients_screen.dart';
+import 'package:lamaalam/ui/screens/plan_screen.dart';
 import 'package:lamaalam/ui/screens/project_screen.dart';
+import 'package:lamaalam/ui/screens/room_screen.dart';
 import 'package:lamaalam/ui/screens/sync_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -103,5 +105,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Serveur : M. Benali Karim'), findsOneWidget);
     expect(find.text('Garder la mienne'), findsOneWidget);
+  });
+
+  testWidgets('Pièce : rectangle, passage mur par mur, alerte de fermeture', (tester) async {
+    final (state, wrap) = await _setup();
+    final p = state.createProject();
+    final r = state.addRoom(p);
+    await tester.pumpWidget(wrap(RoomScreen(projectId: p.id, roomId: r.id)));
+    await tester.pumpAndSettle();
+    expect(find.text('Longueur (m) · à vérifier'), findsOneWidget);
+    await tester.scrollUntilVisible(find.textContaining('cote(s) à la valeur standard'), 300,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('cote(s) à la valeur standard'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Mur par mur'), -300, scrollable: find.byType(Scrollable).first);
+
+    await tester.tap(find.text('Mur par mur'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mur 4'), findsOneWidget);
+
+    // Cotes incohérentes : 5 / 4 / 5,03 / 4.
+    state.mutate(() {
+      for (final (i, l) in [5.0, 4.0, 5.03, 4.0].indexed) {
+        r.walls[i]
+          ..length = l
+          ..lengthSource = MeasureSource.manual;
+      }
+    }, touch: p, room: r);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.textContaining('ne se referment pas'), 300,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('ne se referment pas'), findsOneWidget);
+  });
+
+  testWidgets('Plan : pièce en L et pièce rectangulaire', (tester) async {
+    final (state, wrap) = await _setup();
+    final p = state.createProject();
+    final l = state.addRoom(p);
+    state.mutate(() {
+      l.walls = [
+        for (final (i, (len, a)) in [(6.0, 90.0), (2.0, 90.0), (2.0, 270.0), (2.0, 90.0), (4.0, 90.0), (4.0, 90.0)].indexed)
+          Wall(id: 'w$i', length: len, angle: a),
+      ];
+      l.openings = [Opening(id: 'd', type: OpeningType.door, wallIndex: 4, width: 0.9, height: 2.1)];
+    }, touch: p, room: l);
+    state.addRoom(p);
+    await tester.pumpWidget(wrap(PlanScreen(projectId: p.id)));
+    await tester.pumpAndSettle();
+    expect(find.text('Plan'), findsOneWidget);
+    expect(l.planX, isNotNull);
   });
 }

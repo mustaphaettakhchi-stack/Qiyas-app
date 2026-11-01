@@ -114,7 +114,9 @@ Index : UNIQUE `(organization_id, reference)`, `(organization_id, status)`, `(cl
 **rooms** — `floor_id` FK, `project_id`, `name`, `room_type` (`room`, `corridor`, `bathroom`, `kitchen`, `facade`, `roof`, `stairs`, `terrace`, `land`, `other`), `ceiling_height_m`, `polygon` (`jsonb` : sommets `[x, y]` en mètres dans le repère de l'étage, **dérivés** des murs), `computed_floor_area_m2`, `computed_perimeter_m`, `computed_at`, `calc_version` (version de la bibliothèque de calcul utilisée).
 Les valeurs `computed_*` sont des **caches** recalculables, jamais saisies.
 
-*Tables ajoutées pour sortir du modèle rectangulaire* :
+*État au lot 1.3 (migration 0004)* : **la table `rooms` est créée, rattachée directement au projet** (`project_id`, `level_name` texte) ; `properties`, `buildings` et `floors` ne sont pas encore créées. **Murs et ouvertures sont stockés en JSONB dans la fiche de la pièce** (`walls`, `openings`) plutôt que dans des tables `walls` et `openings` : la pièce est l'unité de synchronisation et de conflit, et un relevé incohérent ne peut ainsi jamais être enregistré à moitié. Le serveur valide la structure (3 à 64 murs, ouvertures sur des murs existants, plages de valeurs) et recalcule `computed_floor_area_m2`, `computed_perimeter_m` et `closure_error_m` à chaque écriture. Les tables ci-dessous restent la cible si des requêtes mur par mur deviennent nécessaires.
+
+*Tables ajoutées pour sortir du modèle rectangulaire (cible)* :
 
 - **walls** — `room_id`, `project_id`, `index` (ordre de parcours), `length_m`, `angle_to_next_deg` (DEFAULT 90), `height_m` NULL (hérite de la pièce), `thickness_m`, `finish`. **Les murs sont la source** ; le polygone de la pièce en est déduit. Si le polygone ne se referme pas (écart de fermeture > 2 cm), la pièce est signalée « cotes incohérentes » et son métré ne peut pas être validé.
 - **openings** — `wall_id`, `project_id`, `type` (`door`, `window`, `bay`, `closet`, `other`), `width_m`, `height_m`, `sill_height_m`, `offset_from_start_m`, `is_default_size` (bool : vrai si dimension standard non mesurée).
