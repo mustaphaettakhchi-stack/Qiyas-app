@@ -103,6 +103,9 @@ jobs:
       - name: Dépendances
         run: flutter pub get
 
+      - name: Outil de contrôle du PDF (pdftotext)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
       - name: Analyse, tests et APK
         run: |
           set +e
@@ -140,6 +143,9 @@ jobs:
             echo "## flutter build apk (fin du journal)"
             tail -n 120 build.txt
           } > ci-report.md
+          # Fin des journaux dans la sortie de l'étape : un échec est lisible sans télécharger le rapport.
+          echo "::group::flutter analyze"; tail -n 40 analyze.txt; echo "::endgroup::"
+          echo "::group::flutter test"; grep -E "\[E\]|Expected|Actual|Which|Exception|Error:" test.txt | head -n 80; tail -n 5 test.txt; echo "::endgroup::"
           echo "A=$A" >> "$GITHUB_ENV"
           echo "T=$T" >> "$GITHUB_ENV"
           echo "B=$B" >> "$GITHUB_ENV"

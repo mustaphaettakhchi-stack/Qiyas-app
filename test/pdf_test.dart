@@ -36,8 +36,13 @@ void main() {
     final bytes = await PdfService.build(company: company, project: project, quote: q, client: client);
     final file = File('${Directory.systemTemp.path}/$name.pdf')..writeAsBytesSync(bytes);
     expect(bytes.length, greaterThan(1000));
-    final r = Process.runSync('pdftotext', ['-layout', file.path, '-']);
-    return r.exitCode == 0 ? r.stdout as String : null;
+    try {
+      final tool = Platform.environment['PDFTOTEXT'] ?? 'pdftotext';
+      final r = Process.runSync(tool, ['-layout', file.path, '-']);
+      return r.exitCode == 0 ? r.stdout as String : null;
+    } on ProcessException {
+      return null; // poppler absent (machines de la CI) : le test est ignoré, la génération reste vérifiée
+    }
   }
 
   test('Devis validé : numéro, TVA par taux, aucun déboursé ni marge, pas de signature électronique', () async {
