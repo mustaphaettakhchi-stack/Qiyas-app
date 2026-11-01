@@ -41,7 +41,7 @@ void main() {
       final line = lineFrom(w, 'l');
       expect(lineNetQuantity(p, line), 20);
       expect(lineQuantity(p, line), 22);
-      expect(lineTotalCents(p, line), 22 * 25000);
+      expect(lineTotalCents(p, Quote(id: 'q', date: DateTime(2026)), line), 22 * 25000);
       expect(WorkItem(id: 'x', name: 'x').wasteRateBp, 0);
     });
 

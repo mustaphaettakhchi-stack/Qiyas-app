@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../domain/calculations.dart';
+import '../domain/metre.dart';
 import '../domain/models.dart';
 import 'local_store.dart';
 import 'templates.dart';
@@ -64,9 +65,10 @@ class AppState extends ChangeNotifier {
   /// Applique une modification, puis sauvegarde et notifie.
   /// [meta] : la modification touche des informations partagées avec le serveur
   /// (fiche projet ou client) et devra être synchronisée.
-  void mutate(VoidCallback change, {Project? touch, bool meta = false, Client? client, Room? room}) {
+  void mutate(VoidCallback change, {Project? touch, bool meta = false, Client? client, Room? room, Quote? quote}) {
     change();
     room?.markEdited();
+    quote?.markEdited();
     if (touch != null) {
       touch.updatedAt = DateTime.now();
       if (meta) touch.markEdited();
@@ -103,13 +105,15 @@ class AppState extends ChangeNotifier {
       data.clients.where((c) => c.dirty && c.syncError == null).length +
       data.projects.where((p) => p.dirty && p.syncError == null).length +
       data.projects.fold<int>(0, (n, p) => n + p.rooms.where((r) => r.dirty && r.syncError == null).length) +
-      data.roomTombstones.where((t) => t.syncError == null).length;
+      data.roomTombstones.where((t) => t.syncError == null).length +
+      data.projects.fold<int>(0, (n, p) => n + p.quotes.where((q) => q.dirty && !q.legacy && q.syncError == null).length);
 
   int get rejectedCount =>
       data.clients.where((c) => c.syncError != null).length +
       data.projects.where((p) => p.syncError != null).length +
       data.projects.fold<int>(0, (n, p) => n + p.rooms.where((r) => r.syncError != null).length) +
-      data.roomTombstones.where((t) => t.syncError != null).length;
+      data.roomTombstones.where((t) => t.syncError != null).length +
+      data.projects.fold<int>(0, (n, p) => n + p.quotes.where((q) => q.syncError != null).length);
 
   Project? project(String id) {
     for (final p in data.projects) {
@@ -288,67 +292,183 @@ class AppState extends ChangeNotifier {
       });
 
   // ---------- devis ----------
+  /// TVA par défaut des nouvelles lignes : taux de l'entreprise (paramétrable dans le profil).
+  int get defaultVatBp => (company.vatPercent * 100).round();
+
   Quote draftQuoteFor(Project p) {
     for (final q in p.quotes) {
-      if (q.status == QuoteStatus.draft) return q;
+      if (q.status == QuoteStatus.draft && !q.legacy) return q;
     }
     return createQuote(p);
   }
 
   Quote createQuote(Project p) {
-    late Quote q;
-    mutate(() {
-      data.quoteCounter++;
-      final year = DateTime.now().year;
-      q = Quote(
-        id: newId(),
-        number: 'DV-$year-${data.quoteCounter.toString().padLeft(4, '0')}',
-        date: DateTime.now(),
-      );
-      p.quotes.add(q);
-    }, touch: p);
+    final q = Quote(id: newId(), date: DateTime.now(), validityDays: company.validityDays);
+    mutate(() => p.quotes.add(q), touch: p, quote: q);
     return q;
   }
 
-  /// Un devis envoyé est figé : toute modification crée une nouvelle version (v2, v3…).
+  /// Nouvelle version d'un devis figé : brouillon v+1 dont les quantités suivent à nouveau le métré.
+  /// La version d'origine, si elle n'a pas reçu de réponse, est marquée « remplacée ».
   Quote newVersion(Project p, Quote from) {
-    final base = from.number.replaceAll(RegExp(r'-v\d+$'), '');
+    final versions = p.quotes.where((x) => x.estimateId == from.estimateId);
+    final next = versions.fold<int>(0, (m, x) => x.versionNo > m ? x.versionNo : m) + 1;
     final q = Quote(
       id: newId(),
-      number: '$base-v${from.version + 1}',
-      version: from.version + 1,
+      estimateId: from.legacy ? null : from.estimateId,
+      versionNo: from.legacy ? 1 : next,
       date: DateTime.now(),
-      discountPercent: from.discountPercent,
-      depositPercent: from.depositPercent,
+      title: from.title,
+      validityDays: from.validityDays,
+      currency: from.currency,
+      exchangeRateE4: from.exchangeRateE4,
+      exchangeRateDate: from.exchangeRateDate,
+      exchangeRateSource: from.exchangeRateSource,
+      discountBp: from.discountBp,
+      overheadBp: from.overheadBp,
+      marginBp: from.marginBp,
+      depositBp: from.depositBp,
       lines: [for (final l in from.lines) l.copyWith(id: newId())],
     );
-    mutate(() => p.quotes.add(q), touch: p);
+    mutate(() {
+      p.quotes.add(q);
+      if (!from.legacy && (from.status == QuoteStatus.validated || from.status == QuoteStatus.sent)) {
+        from
+          ..status = QuoteStatus.superseded
+          ..markEdited();
+      }
+    }, touch: p, quote: q);
     return q;
   }
 
-  void addLineFromWorkItem(Project p, Quote q, WorkItem w) => mutate(() => q.lines.add(lineFrom(w, newId())), touch: p);
+  void editQuote(Project p, Quote q, VoidCallback change) => mutate(change, touch: p, quote: q);
 
-  void addFreeLine(Project p, Quote q) => mutate(
-        () => q.lines.add(QuoteLine(id: newId(), label: 'Ligne libre', unit: 'forfait', quantity: 1, manual: true)),
-        touch: p,
+  QuoteLine _line(WorkItem w) {
+    final l = lineFrom(w, newId())..vatRateBp = defaultVatBp;
+    if (w.labourCostCents != null && w.salePriceCents == null) {
+      // Ouvrage défini par son coût : prix calculé (fournitures + main-d'œuvre, frais et marge).
+      l
+        ..pricing = 'cost_plus'
+        ..labourCostCents = w.labourCostCents
+        ..materialCostCents = _componentsCost(w)
+        ..priceMissing = false;
+    }
+    l
+      ..sourcePriceCents = w.salePriceCents
+      ..sourceCurrency = w.currency;
+    return l;
+  }
+
+  /// Coût des fournitures d'un ouvrage : Σ quantité × prix d'achat (connu des seuls administrateurs).
+  int? _componentsCost(WorkItem w) {
+    var total = 0;
+    for (final c in w.components) {
+      final m = material(c['material_id'] as String?);
+      final price = m?.purchasePriceCents;
+      if (price == null) return null;
+      total += ((c['quantity_per_unit'] as num).toDouble() * price).round();
+    }
+    return w.components.isEmpty ? null : total;
+  }
+
+  void addLineFromWorkItem(Project p, Quote q, WorkItem w) => editQuote(p, q, () {
+        final l = _line(w);
+        if (q.currency == 'EUR') _convertLine(l, q);
+        q.lines.add(l);
+      });
+
+  void addFreeLine(Project p, Quote q) => editQuote(
+        p,
+        q,
+        () => q.lines.add(QuoteLine(
+          id: newId(),
+          label: 'Ligne libre',
+          unit: 'forfait',
+          quantity: 1,
+          manual: true,
+          priceMissing: true,
+          vatRateBp: defaultVatBp,
+        )),
       );
 
   void moveLine(Project p, Quote q, int index, int delta) {
     final j = index + delta;
     if (j < 0 || j >= q.lines.length) return;
-    mutate(() {
+    editQuote(p, q, () {
       final l = q.lines.removeAt(index);
       q.lines.insert(j, l);
-    }, touch: p);
+    });
   }
 
-  void markSent(Project p, Quote q) => mutate(() {
+  /// Prix d'une ligne converti depuis son prix d'origine en MAD (taux : MAD pour 1 EUR × 10 000).
+  void _convertLine(QuoteLine l, Quote q) {
+    final rate = q.exchangeRateE4;
+    if (l.sourceCurrency != 'MAD' || l.sourcePriceCents == null || rate == null || rate <= 0) return;
+    l
+      ..unitPriceCents = (l.sourcePriceCents! * 10000 + rate ~/ 2) ~/ rate
+      ..priceMissing = false;
+  }
+
+  /// Change la devise d'un brouillon. Les lignes issues de la bibliothèque en MAD sont converties
+  /// au taux saisi ; les lignes libres gardent leur prix (à vérifier par l'utilisateur).
+  void setCurrency(Project p, Quote q, String currency, {int? rateE4, DateTime? rateDate, String rateSource = ''}) =>
+      editQuote(p, q, () {
+        q
+          ..currency = currency
+          ..exchangeRateE4 = currency == 'EUR' ? rateE4 : null
+          ..exchangeRateDate = currency == 'EUR' ? rateDate : null
+          ..exchangeRateSource = currency == 'EUR' ? rateSource : '';
+        for (final l in q.lines) {
+          if (l.sourcePriceCents == null || l.sourceCurrency != 'MAD') continue;
+          if (currency == 'EUR') {
+            _convertLine(l, q);
+          } else {
+            l.unitPriceCents = l.sourcePriceCents!;
+          }
+        }
+      });
+
+  /// Raisons empêchant la validation (vide = validable).
+  List<String> validationProblems(Project p, Quote q, {required bool isAdmin}) => [
+        if (!isAdmin) 'Seul un administrateur peut valider un devis.',
+        if (q.lines.isEmpty) 'Le devis n\'a aucune ligne.',
+        if (q.lines.any((l) => lineUnitPriceCents(q, l) == null)) 'Des lignes n\'ont pas de prix.',
+        if (q.currency == 'EUR' && (q.exchangeRateE4 == null || q.exchangeRateDate == null))
+          'Indiquez le taux de change et sa date.',
+        if (q.lines.any((l) => !l.manual && l.base != QuantityBase.free) && metreState(p) != MetreState.validated)
+          'Le métré doit être validé (et à jour) avant le devis.',
+        if (!company.hasValidIce) 'Renseignez l\'ICE de l\'entreprise (15 chiffres) dans le profil.',
+      ];
+
+  /// Validation : quantités figées, empreinte du métré enregistrée. Le numéro est attribué par le serveur.
+  void validateQuote(Project p, Quote q, {required String userId}) => editQuote(p, q, () {
         final m = projectMeasures(p);
         for (final l in q.lines) {
           l.frozenQuantity = lineQuantity(p, l, measures: m);
         }
-        q.status = QuoteStatus.sent;
-      }, touch: p);
+        q
+          ..metreFingerprint = metreFingerprint(p)
+          ..validatedAt = DateTime.now()
+          ..validatedBy = userId
+          ..status = QuoteStatus.validated;
+      });
 
-  void setStatus(Project p, Quote q, QuoteStatus s) => mutate(() => q.status = s, touch: p);
+  void markSent(Project p, Quote q) => editQuote(p, q, () {
+        q
+          ..status = QuoteStatus.sent
+          ..sentAt = DateTime.now();
+      });
+
+  void decide(Project p, Quote q, {required bool accepted, String note = ''}) => editQuote(p, q, () {
+        q
+          ..status = accepted ? QuoteStatus.accepted : QuoteStatus.refused
+          ..decidedAt = DateTime.now()
+          ..decisionNote = note;
+      });
+
+  /// Suppression d'un brouillon jamais envoyé au serveur.
+  void deleteLocalDraft(Project p, Quote q) {
+    if (q.status != QuoteStatus.draft || q.serverVersion != null) return;
+    mutate(() => p.quotes.remove(q), touch: p);
+  }
 }

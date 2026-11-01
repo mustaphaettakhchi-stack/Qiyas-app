@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../data/app_state.dart';
+import '../domain/calculations.dart';
 import '../domain/models.dart';
 import '../session/api_client.dart';
 import '../session/session_controller.dart';
@@ -132,6 +133,12 @@ class SyncEngine extends ChangeNotifier {
           for (final r in p.rooms)
             if (r.dirty && r.syncError == null && !_inConflict('rooms', r.id))
               {'entity': 'rooms', 'id': r.id, 'base_version': r.serverVersion, 'deleted': false, 'data': r.toServer(p.id)},
+      // Devis après les pièces : leurs quantités dépendent du métré.
+      for (final p in _data.projects)
+        if (!p.deleted)
+          for (final q in p.quotes)
+            if (q.dirty && !q.legacy && q.syncError == null && !_inConflict('quotes', q.id))
+              {'entity': 'quotes', 'id': q.id, 'base_version': q.serverVersion, 'deleted': false, 'data': quoteToServer(p, q)},
       for (final t in _data.roomTombstones)
         if (t.syncError == null && !_inConflict('rooms', t.id))
           {'entity': 'rooms', 'id': t.id, 'base_version': t.serverVersion, 'deleted': true, 'data': <String, dynamic>{}},
@@ -290,17 +297,21 @@ class SyncEngine extends ChangeNotifier {
         _data.clients.add(Client(id: id));
       case 'projects':
         _data.projects.add(Project(id: id));
-      case 'rooms':
+      case 'rooms' || 'quotes':
         final projectId = (record['data'] as Map)['project_id'] as String?;
         final project = _data.projects.where((p) => p.id == projectId).firstOrNull;
         if (project == null) {
-          // Pièce reçue avant son projet : rattachée à l'arrivée du projet.
+          // Pièce ou devis reçu avant son projet : rattaché à l'arrivée du projet.
           _data.pendingRooms
             ..removeWhere((r) => r['id'] == id)
             ..add(record);
           return;
         }
-        project.rooms.add(Room(id: id, name: '', height: 2.8));
+        if (entity == 'rooms') {
+          project.rooms.add(Room(id: id, name: '', height: 2.8));
+        } else {
+          project.quotes.add(Quote(id: id, estimateId: (record['data'] as Map)['estimate_id'] as String?, date: DateTime.now()));
+        }
     }
     _overwrite(_find(entity, id)!, record);
     if (entity == 'projects') _attachPendingRooms(id);
@@ -310,7 +321,8 @@ class SyncEngine extends ChangeNotifier {
     final waiting = _data.pendingRooms.where((r) => (r['data'] as Map)['project_id'] == projectId).toList();
     for (final r in waiting) {
       _data.pendingRooms.remove(r);
-      if (r['deleted'] != true && _find('rooms', r['id'] as String) == null) _insertFromServer('rooms', r);
+      final entity = r['entity'] as String? ?? 'rooms';
+      if (r['deleted'] != true && _find(entity, r['id'] as String) == null) _insertFromServer(entity, r);
     }
   }
 
@@ -318,6 +330,7 @@ class SyncEngine extends ChangeNotifier {
     final data = Map<String, dynamic>.from(record['data'] as Map);
     if (local is Client) local.applyServer(data);
     if (local is Room) local.applyServer(data);
+    if (local is Quote) local.applyServer(data, reference: record['reference'] as String?);
     if (local is WorkItem) local.applyServer(data);
     if (local is MaterialItem) local.applyServer(data);
     if (local is Supplier) local.applyServer(data);
@@ -399,6 +412,13 @@ class SyncEngine extends ChangeNotifier {
         return _data.clients.where((c) => c.id == id).firstOrNull;
       case 'projects':
         return _data.projects.where((p) => p.id == id).firstOrNull;
+      case 'quotes':
+        for (final p in _data.projects) {
+          for (final q in p.quotes) {
+            if (q.id == id) return q;
+          }
+        }
+        return null;
       default:
         for (final p in _data.projects) {
           for (final r in p.rooms) {
@@ -408,6 +428,8 @@ class SyncEngine extends ChangeNotifier {
         return null;
     }
   }
+
+  Project? _projectOfQuote(String quoteId) => _data.projects.where((p) => p.quotes.any((q) => q.id == quoteId)).firstOrNull;
 
   Project? _projectOfRoom(String roomId) => _data.projects.where((p) => p.rooms.any((r) => r.id == roomId)).firstOrNull;
 
@@ -423,6 +445,8 @@ class SyncEngine extends ChangeNotifier {
         _data.clients.removeWhere((c) => c.id == id);
       case 'projects':
         _data.projects.removeWhere((p) => p.id == id);
+      case 'quotes':
+        _projectOfQuote(id)?.quotes.removeWhere((q) => q.id == id);
       default:
         _projectOfRoom(id)?.rooms.removeWhere((r) => r.id == id);
     }
@@ -432,6 +456,7 @@ class SyncEngine extends ChangeNotifier {
         Client() => x.toServer(),
         Project() => x.toServer(),
         Room() => x.toServer(_projectOfRoom(x.id)?.id ?? ''),
+        Quote() => quoteToServer(_projectOfQuote(x.id) ?? Project(id: ''), x),
         WorkItem() => x.toServer(),
         MaterialItem() => x.toServer(),
         Supplier() => x.toServer(),
@@ -446,6 +471,10 @@ class SyncEngine extends ChangeNotifier {
       Client() => (Client(id: local.id)..applyServer(data)).toServer(),
       Project() => (Project(id: local.id)..applyServer(data)).toServer(),
       Room() => (Room(id: local.id, name: '', height: 2.8)..applyServer(data)).toServer(_projectOfRoom(local.id)?.id ?? ''),
+      Quote() => quoteToServer(
+          _projectOfQuote(local.id) ?? Project(id: ''),
+          Quote(id: local.id, estimateId: local.estimateId, date: local.date)..applyServer(data, reference: local.number),
+        ),
       WorkItem() => (WorkItem(id: local.id, name: '')..applyServer(data)).toServer(),
       MaterialItem() => (MaterialItem(id: local.id, name: '')..applyServer(data)).toServer(),
       Supplier() => (Supplier(id: local.id, name: '')..applyServer(data)).toServer(),

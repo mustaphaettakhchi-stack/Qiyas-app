@@ -149,7 +149,9 @@ class StatusPill extends StatelessWidget {
     final (Color bg, Color fg, String label) = switch (status) {
       null => (cs.tertiaryContainer, cs.onTertiaryContainer, 'Relevé en cours'),
       QuoteStatus.draft => (cs.surfaceContainerHighest, cs.onSurfaceVariant, kStatusLabel[status]!),
+      QuoteStatus.validated => (cs.secondaryContainer, cs.onSecondaryContainer, kStatusLabel[status]!),
       QuoteStatus.sent => (cs.primaryContainer, cs.onPrimaryContainer, kStatusLabel[status]!),
+      QuoteStatus.superseded => (cs.surfaceContainerHighest, cs.onSurfaceVariant, kStatusLabel[status]!),
       QuoteStatus.accepted => (const Color(0xFFDCEFE3), const Color(0xFF1F6B44), kStatusLabel[status]!),
       QuoteStatus.refused => (cs.errorContainer, cs.onErrorContainer, kStatusLabel[status]!),
     };

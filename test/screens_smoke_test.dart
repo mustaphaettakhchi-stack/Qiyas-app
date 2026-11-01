@@ -15,6 +15,7 @@ import 'package:lamaalam/ui/screens/library_screen.dart';
 import 'package:lamaalam/ui/screens/metre_screen.dart';
 import 'package:lamaalam/ui/screens/plan_screen.dart';
 import 'package:lamaalam/ui/screens/project_screen.dart';
+import 'package:lamaalam/ui/screens/quote_screen.dart';
 import 'package:lamaalam/ui/screens/room_screen.dart';
 import 'package:lamaalam/ui/screens/sync_screen.dart';
 import 'package:provider/provider.dart';
@@ -191,5 +192,27 @@ void main() {
     expect(find.textContaining('Valider le métré'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Prises'), 300, scrollable: find.byType(Scrollable).first);
     expect(find.text('Prises'), findsOneWidget);
+  });
+
+  testWidgets('Devis : lignes à prix direct et calculé, TVA, euros, totaux exacts', (tester) async {
+    final (state, wrap) = await _setup();
+    final p = state.createProject();
+    final r = state.addRoom(p);
+    state.mutate(() {
+      for (final (i, l) in [5.0, 4.0, 5.0, 4.0].indexed) {
+        r.walls[i].length = l;
+      }
+    }, touch: p, room: r);
+    final q = state.createQuote(p);
+    state.addLineFromWorkItem(p, q, WorkItem(id: 'w', name: 'Carrelage sol', unit: 'm2', base: QuantityBase.floor, salePriceCents: 25000));
+    state.addLineFromWorkItem(p, q, WorkItem(id: 'x', name: 'Pose', unit: 'u', labourCostCents: 12000));
+    state.setCurrency(p, q, 'EUR', rateE4: 108500, rateDate: DateTime(2026, 11, 1));
+    await tester.pumpWidget(wrap(QuoteScreen(projectId: p.id, quoteId: q.id)));
+    await tester.pumpAndSettle();
+    expect(find.text('Brouillon v1'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Total TTC'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('€'), findsWidgets);
+    await tester.scrollUntilVisible(find.text('Valider le devis'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Valider le devis'), findsOneWidget);
   });
 }

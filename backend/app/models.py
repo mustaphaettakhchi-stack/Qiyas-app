@@ -390,6 +390,55 @@ class PriceHistory(Base):
     recorded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
 
 
+# ---------- devis (lot 1.6) ----------
+
+QUOTE_STATUSES = ("draft", "validated", "sent", "accepted", "refused", "superseded")
+
+
+class QuoteVersion(Synced, Base):
+    """Une version de devis. Les versions d'un même devis partagent estimate_id.
+
+    Une version qui n'est plus un brouillon est figée : un déclencheur PostgreSQL refuse
+    toute modification de son contenu (seuls le statut et les dates d'envoi et de décision
+    évoluent), et sa suppression.
+    """
+
+    __tablename__ = "estimate_versions"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "reference", name="uq_estimate_versions_reference"),
+        UniqueConstraint("estimate_id", "version_no", name="uq_estimate_versions_version"),
+        CheckConstraint(_in("status", QUOTE_STATUSES), name="ck_estimate_versions_status"),
+        CheckConstraint(_in("currency", CURRENCIES), name="ck_estimate_versions_currency"),
+        CheckConstraint("currency = 'MAD' OR exchange_rate_e4 > 0", name="ck_estimate_versions_rate"),
+        CheckConstraint("status = 'draft' OR reference IS NOT NULL", name="ck_estimate_versions_number"),
+    )
+
+    estimate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    version_no: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(12), default="draft")
+    reference: Mapped[str | None] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200), default="")
+    issue_date: Mapped[date] = mapped_column(Date)
+    validity_days: Mapped[int] = mapped_column(Integer, default=30)
+    currency: Mapped[str] = mapped_column(String(3), default="MAD")
+    exchange_rate_e4: Mapped[int | None] = mapped_column(BigInteger)
+    exchange_rate_date: Mapped[date | None] = mapped_column(Date)
+    exchange_rate_source: Mapped[str] = mapped_column(String(200), default="")
+    discount_bp: Mapped[int] = mapped_column(Integer, default=0)
+    overhead_bp: Mapped[int] = mapped_column(Integer, default=0)
+    margin_bp: Mapped[int] = mapped_column(Integer, default=0)
+    deposit_bp: Mapped[int] = mapped_column(Integer, default=0)
+    lines: Mapped[list] = mapped_column(JSONB, default=list)
+    totals: Mapped[dict] = mapped_column(JSONB, default=dict)
+    metre_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    validated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+
+
 class OrgCounter(Base):
     """Compteurs de numérotation par organisation (références de projets, puis devis et factures)."""
 

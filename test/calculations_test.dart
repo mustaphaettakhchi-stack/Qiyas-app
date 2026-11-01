@@ -19,7 +19,7 @@ void main() {
           id: 'q',
           number: 'DV-TEST-0001',
           date: DateTime(2026, 10, 25),
-          depositPercent: 30,
+          depositBp: 3000,
           lines: [for (final id in ['pm', 'pp', 'cs', 'pl']) lineFrom(byId(id), id)],
         ),
       ],
@@ -64,13 +64,16 @@ void main() {
   group('Devis', () {
     test('référence : 27 989 MAD HT, 5 598 MAD de TVA, 33 587 MAD TTC', () {
       final p = referenceProject();
-      final t = quoteTotals(p, p.quotes.first, 20);
+      final t = quoteTotals(p, p.quotes.first);
       expect(t.ht, 2798895);
       expect(t.vat, 559779);
       expect(t.ttc, 3358674);
       expect(dh(t.ht), '27 989 DH');
       expect(dh(t.vat), '5 598 DH');
       expect(dh(t.ttc), '33 587 DH');
+      // Sur le devis, les montants sont exacts au centime.
+      expect(money(t.ht, 'MAD'), '27 988,95 MAD');
+      expect(money(t.ttc, 'MAD'), '33 586,74 MAD');
       expect(t.deposit, 1007602);
     });
 
@@ -81,7 +84,7 @@ void main() {
         ..manual = true
         ..quantity = 10;
       expect(lineQuantity(p, line), 10);
-      expect(lineTotalCents(p, line), 45000);
+      expect(lineTotalCents(p, p.quotes.first, line), 45000);
     });
 
     test('un devis figé ne bouge plus quand le relevé change', () {
@@ -90,18 +93,19 @@ void main() {
       for (final l in q.lines) {
         l.frozenQuantity = lineQuantity(p, l);
       }
-      final before = quoteTotals(p, q, 20).ttc;
+      final before = quoteTotals(p, q).ttc;
       p.rooms.first.walls.first.length = 10;
-      expect(quoteTotals(p, q, 20).ttc, before);
+      expect(quoteTotals(p, q).ttc, before);
     });
 
     test('la remise s\'applique avant la TVA', () {
       final p = referenceProject();
-      final q = p.quotes.first..discountPercent = 10;
-      final t = quoteTotals(p, q, 20);
+      final q = p.quotes.first..discountBp = 1000;
+      final t = quoteTotals(p, q);
       expect(t.discount, (t.subtotal * 0.10).round());
       expect(t.ht, t.subtotal - t.discount);
       expect(t.vat, (t.ht * 0.20).round());
+      expect(t.vatByRate.keys, [2000]);
     });
   });
 
@@ -110,6 +114,11 @@ void main() {
       expect(fmt2(1234.5), '1 234,50');
       expect(fmt2(0.05), '0,05');
       expect(dh(123456789), '1 234 568 DH');
+      expect(money(123456789, 'MAD'), '1 234 567,89 MAD');
+      expect(money(5, 'EUR'), '0,05 €');
+      expect(pctBp(2000), '20 %');
+      expect(pctBp(750), '7,5 %');
+      expect(rateE4(108500), '10,8500');
       expect(parseNum('5,20'), 5.2);
       expect(parseNum('abc'), isNull);
       expect(frDate(DateTime(2026, 3, 7)), '07/03/2026');
@@ -128,7 +137,7 @@ void main() {
       final back = AppData.fromJson(data.toJson());
       expect(back.projects.length, data.projects.length);
       final p = back.projects.first;
-      expect(quoteTotals(p, p.quotes.first, back.company.vatPercent).ttc, 3358674);
+      expect(quoteTotals(p, p.quotes.first).ttc, 3358674);
       expect(back.company.hasValidIce, isTrue);
     });
   });

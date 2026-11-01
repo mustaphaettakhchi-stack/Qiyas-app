@@ -101,7 +101,7 @@ Critères :
 7. Réponse du client consignée par l'équipe (« accepté » / « refusé », date, commentaire).
 
 Critères :
-- A6.1 — Le devis de référence (projet de 5 pièces Qiyas : 27 989 MAD HT, 5 598 MAD de TVA, 33 587 MAD TTC à 20 %) est reproduit au centime près par la nouvelle implémentation.
+- A6.1 — Le devis de référence (projet de 5 pièces Qiyas : 27 989 MAD HT, 5 598 MAD de TVA, 33 587 MAD TTC à 20 %) est reproduit au centime près par la nouvelle implémentation. *Précision (lot 1.6) : les montants exacts sont 27 988,95 MAD HT, 5 597,79 MAD de TVA et 33 586,74 MAD TTC ; « 27 989 » était un arrondi d'affichage. Le devis affiche désormais les montants au centime.*
 - A6.2 — Une version validée ne peut plus être modifiée (refus côté serveur testé) ; « Modifier » crée la version n+1.
 - A6.3 — Un devis en EUR affiche le taux de change saisi et sa date sur le PDF.
 - A6.4 — Le PDF affiche correctement un nom de client en arabe.

@@ -33,3 +33,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/logo_lamaalam_corrige_512.png
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
+    - assets/fonts/NotoSansArabic-Regular.ttf
+    - assets/fonts/NotoSansArabic-Bold.ttf

@@ -139,10 +139,31 @@ double lineQuantity(Project p, QuoteLine l, {Measures? measures}) {
   return round2(net * (1 + l.wasteRateBp / 10000));
 }
 
-/// Total HT d'une ligne, en centimes. Les calculs se font en entiers.
-int lineTotalCents(Project p, QuoteLine l, {Measures? measures}) {
-  final qtyHundredths = (lineQuantity(p, l, measures: measures) * 100).round();
-  return (qtyHundredths * l.unitPriceCents / 100).round();
+// ---------- montants du devis ----------
+// Mêmes règles que backend/app/quotes.py, vérifiées sur shared/quote_cases.json.
+// Montants en centimes entiers ; arrondis au plus proche, la moitié vers le haut.
+
+int _divHalfUp(int a, int b) => (a + b ~/ 2) ~/ b;
+
+/// Prix calculé = (fournitures + main-d'œuvre) × (1 + frais indirects) × (1 + marge).
+int costPlusPriceCents(int materialCents, int labourCents, int overheadBp, int marginBp) =>
+    _divHalfUp((materialCents + labourCents) * (10000 + overheadBp) * (10000 + marginBp), 100000000);
+
+/// Prix unitaire HT de la ligne, ou null s'il manque.
+int? lineUnitPriceCents(Quote q, QuoteLine l) {
+  if (l.pricing == 'cost_plus') {
+    if (l.materialCostCents == null && l.labourCostCents == null) return null;
+    return costPlusPriceCents(l.materialCostCents ?? 0, l.labourCostCents ?? 0, q.overheadBp, q.marginBp);
+  }
+  return l.priceMissing ? null : l.unitPriceCents;
+}
+
+/// Total HT d'une ligne = quantité (arrondie au centième) × prix unitaire, au centime.
+int lineAmountCents(double quantity, int priceCents) => _divHalfUp((quantity * 100).round() * priceCents, 100);
+
+int lineTotalCents(Project p, Quote q, QuoteLine l, {Measures? measures}) {
+  final price = lineUnitPriceCents(q, l);
+  return price == null ? 0 : lineAmountCents(lineQuantity(p, l, measures: measures), price);
 }
 
 class QuoteTotals {
@@ -150,7 +171,7 @@ class QuoteTotals {
     required this.subtotal,
     required this.discount,
     required this.ht,
-    required this.vat,
+    required this.vatByRate,
     required this.ttc,
     required this.deposit,
   });
@@ -158,20 +179,70 @@ class QuoteTotals {
   final int subtotal;
   final int discount;
   final int ht;
-  final int vat;
+
+  /// TVA par taux (points de base → montant).
+  final Map<int, int> vatByRate;
   final int ttc;
   final int deposit;
+
+  int get vat => vatByRate.values.fold<int>(0, (a, b) => a + b);
+
+  /// Forme envoyée au serveur, qui la recalcule et refuse tout écart.
+  Map<String, dynamic> toServer() => {
+        'subtotal': subtotal,
+        'discount': discount,
+        'ht': ht,
+        'vat': {for (final k in (vatByRate.keys.toList()..sort())) '$k': vatByRate[k]},
+        'ttc': ttc,
+        'deposit': deposit,
+      };
 }
 
-QuoteTotals quoteTotals(Project p, Quote q, double vatPercent) {
-  final m = projectMeasures(p);
-  final subtotal = q.lines.fold<int>(0, (s, l) => s + lineTotalCents(p, l, measures: m));
-  final discount = (subtotal * q.discountPercent / 100).round();
+/// Totaux à partir des quantités et prix de chaque ligne. La remise est répartie par taux de TVA.
+QuoteTotals computeTotals(List<(double quantity, int? price, int vatBp)> lines, int discountBp, int depositBp) {
+  final byRate = <int, int>{};
+  var subtotal = 0;
+  for (final (qty, price, vat) in lines) {
+    final t = price == null ? 0 : lineAmountCents(qty, price);
+    subtotal += t;
+    byRate[vat] = (byRate[vat] ?? 0) + t;
+  }
+  var discount = 0;
+  final vatByRate = <int, int>{};
+  for (final e in byRate.entries) {
+    final d = _divHalfUp(e.value * discountBp, 10000);
+    discount += d;
+    vatByRate[e.key] = _divHalfUp((e.value - d) * e.key, 10000);
+  }
   final ht = subtotal - discount;
-  final vat = (ht * vatPercent / 100).round();
-  final ttc = ht + vat;
-  final deposit = (ttc * q.depositPercent / 100).round();
-  return QuoteTotals(subtotal: subtotal, discount: discount, ht: ht, vat: vat, ttc: ttc, deposit: deposit);
+  final ttc = ht + vatByRate.values.fold<int>(0, (a, b) => a + b);
+  return QuoteTotals(
+    subtotal: subtotal,
+    discount: discount,
+    ht: ht,
+    vatByRate: vatByRate,
+    ttc: ttc,
+    deposit: _divHalfUp(ttc * depositBp, 10000),
+  );
+}
+
+QuoteTotals quoteTotals(Project p, Quote q) {
+  final m = projectMeasures(p);
+  return computeTotals(
+    [for (final l in q.lines) (lineQuantity(p, l, measures: m), lineUnitPriceCents(q, l), l.vatRateBp)],
+    q.discountBp,
+    q.depositBp,
+  );
+}
+
+/// Données d'une version de devis pour le serveur (quantités effectives et totaux inclus).
+Map<String, dynamic> quoteToServer(Project p, Quote q) {
+  final m = projectMeasures(p);
+  return q.toServer(
+    projectId: p.id,
+    lineQuantities: [for (final l in q.lines) lineQuantity(p, l, measures: m)],
+    totals: quoteTotals(p, q).toServer(),
+  );
 }
 
 /// Alertes de saisie. Les plages sont indicatives : elles avertissent sans bloquer.

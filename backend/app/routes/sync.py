@@ -44,12 +44,14 @@ from ..models import (
     Project,
     Role,
     PriceHistory,
+    QuoteVersion,
     Room,
     Supplier,
     User,
     WorkItem,
 )
 from ..geometry import room_measures
+from ..quotes import compute as compute_quote
 from ..security import now
 
 router = APIRouter(prefix="/sync", tags=["synchronisation"])
@@ -224,6 +226,84 @@ class WorkItemData(BaseModel):
         return self
 
 
+class QuoteLineData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(max_length=64)
+    work_item_id: uuid.UUID | None = None
+    label: str = Field(min_length=1, max_length=300)
+    description: str = Field(default="", max_length=2000)
+    unit: str = Field(max_length=20)
+    quantity_basis: Literal[QUANTITY_BASES] = "manual"  # type: ignore[valid-type]
+    count_key: Literal[COUNT_KEYS] | None = None  # type: ignore[valid-type]
+    waste_rate_bp: int = Field(default=0, ge=0, le=10000)
+    quantity: float = Field(ge=0, le=10**7)
+    manual: bool = False
+    pricing: Literal["direct", "cost_plus"] = "direct"
+    unit_price_cents: int | None = Field(default=None, ge=0, le=10**12)
+    material_cost_cents: int | None = Field(default=None, ge=0, le=10**12)
+    labour_cost_cents: int | None = Field(default=None, ge=0, le=10**12)
+    vat_rate_bp: int = Field(ge=0, le=10000)
+    trace: str = Field(default="", max_length=500)
+
+
+class QuoteTotalsData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subtotal: int
+    discount: int
+    ht: int
+    vat: dict[str, int]
+    ttc: int
+    deposit: int
+
+
+class QuoteData(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    estimate_id: uuid.UUID
+    project_id: uuid.UUID
+    version_no: int = Field(ge=1, le=999)
+    status: Literal["draft", "validated", "sent", "accepted", "refused", "superseded"] = "draft"
+    title: str = Field(default="", max_length=200)
+    issue_date: date
+    validity_days: int = Field(ge=1, le=365)
+    currency: Literal[CURRENCIES] = "MAD"  # type: ignore[valid-type]
+    exchange_rate_e4: int | None = Field(default=None, gt=0, le=10**9)
+    exchange_rate_date: date | None = None
+    exchange_rate_source: str = Field(default="", max_length=200)
+    discount_bp: int = Field(default=0, ge=0, le=10000)
+    overhead_bp: int = Field(default=0, ge=0, le=100000)
+    margin_bp: int = Field(default=0, ge=0, le=100000)
+    deposit_bp: int = Field(default=0, ge=0, le=10000)
+    lines: list[QuoteLineData] = Field(default_factory=list, max_length=500)
+    totals: QuoteTotalsData
+    metre_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    validated_at: datetime | None = None
+    validated_by: uuid.UUID | None = None
+    sent_at: datetime | None = None
+    decided_at: datetime | None = None
+    decision_note: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def _currency_rate(self) -> "QuoteData":
+        if self.currency == "EUR" and (self.exchange_rate_e4 is None or self.exchange_rate_date is None):
+            raise ValueError("un devis en euros exige le taux de change et sa date")
+        return self
+
+
+# Transitions de statut autorisées (le brouillon reste modifiable).
+QUOTE_TRANSITIONS = {
+    "draft": {"draft", "validated"},
+    "validated": {"validated", "sent", "superseded"},
+    "sent": {"sent", "accepted", "refused", "superseded"},
+    "accepted": {"accepted"},
+    "refused": {"refused"},
+    "superseded": {"superseded"},
+}
+QUOTE_MUTABLE_WHEN_FROZEN = {"status", "sent_at", "decided_at", "decision_note"}
+
+
 LIBRARY = frozenset({"suppliers", "materials", "work_items"})
 PRICE_FIELDS = ("purchase_price_cents", "sale_price_cents", "labour_cost_cents")
 
@@ -234,14 +314,15 @@ ENTITIES: dict[str, tuple[type, type[BaseModel]]] = {
     "suppliers": (Supplier, SupplierData),
     "materials": (Material, MaterialData),
     "work_items": (WorkItem, WorkItemData),
+    "quotes": (QuoteVersion, QuoteData),
 }
 
 # Ordre d'envoi et de réception : un enregistrement après ceux auxquels il fait référence.
-ORDER = ("suppliers", "materials", "work_items", "clients", "projects", "rooms")
+ORDER = ("suppliers", "materials", "work_items", "clients", "projects", "rooms", "quotes")
 
 
 class Change(BaseModel):
-    entity: Literal["clients", "projects", "rooms", "suppliers", "materials", "work_items"]
+    entity: Literal["clients", "projects", "rooms", "suppliers", "materials", "work_items", "quotes"]
     id: uuid.UUID
     base_version: int | None = Field(default=None, ge=1)
     deleted: bool = False
@@ -340,7 +421,78 @@ def _visible(entity: str, ctx: Context):  # type: ignore[no-untyped-def]
     if entity in LIBRARY:
         model, _ = ENTITIES[entity]
         return select(model).where(model.organization_id == ctx.organization_id)
+    if entity == "quotes":
+        projects = _visible_projects(ctx).with_only_columns(Project.id).scalar_subquery()
+        return select(QuoteVersion).where(
+            QuoteVersion.organization_id == ctx.organization_id, QuoteVersion.project_id.in_(projects)
+        )
     return {"clients": _visible_clients, "projects": _visible_projects, "rooms": _visible_rooms}[entity](ctx)
+
+
+def _check_quote(db: Session, ctx: Context, data: "QuoteData", previous: QuoteVersion | None) -> None:
+    """Règles métier d'un devis (USER_FLOWS P6)."""
+    project = db.scalar(_visible_projects(ctx).where(Project.id == data.project_id, Project.deleted_at.is_(None)))
+    if project is None:
+        raise _Rejected("Le projet de ce devis n'existe pas, a été supprimé ou ne vous est pas accessible.")
+    before = previous.status if previous is not None else "draft"
+    if data.status not in QUOTE_TRANSITIONS[before]:
+        raise _Rejected(f"Passage de « {before} » à « {data.status} » impossible.")
+    if previous is not None:
+        if data.project_id != previous.project_id or data.estimate_id != previous.estimate_id:
+            raise _Rejected("Un devis ne peut pas changer de projet.")
+        if before != "draft":
+            stored = _record("quotes", previous, ctx).model_dump(mode="json")["data"]
+            sent = data.model_dump(mode="json")
+            changed = [k for k in sent if k not in QUOTE_MUTABLE_WHEN_FROZEN and sent[k] != stored.get(k)]
+            if changed:
+                raise _Rejected("Un devis validé ne peut plus être modifié : créez une nouvelle version.")
+    # Montants recalculés par le serveur : tout écart avec le téléphone est refusé.
+    lines = [line.model_dump() for line in data.lines]
+    totals = compute_quote(lines, data.discount_bp, data.overhead_bp, data.margin_bp, data.deposit_bp)
+    if totals.as_dict() != data.totals.model_dump():
+        raise _Rejected("Écart de calcul entre le téléphone et le serveur : devis refusé, signalez-le.")
+    if data.status == "validated" and before == "draft":
+        if Role.admin not in ctx.roles:
+            raise _Rejected("Seul un administrateur peut valider un devis.")
+        if not data.lines:
+            raise _Rejected("Un devis sans ligne ne peut pas être validé.")
+        if any(p is None for p in totals.unit_prices):
+            raise _Rejected("Des lignes n'ont pas de prix : le devis ne peut pas être validé.")
+        if data.validated_by != ctx.user.id or data.validated_at is None:
+            raise _Rejected("Validation incomplète (auteur ou date manquants).")
+        if any(line.quantity_basis != "manual" and not line.manual for line in data.lines):
+            fingerprint = (project.metre_validation or {}).get("fingerprint")
+            if fingerprint is None or fingerprint != data.metre_fingerprint:
+                raise _Rejected("Le devis doit reposer sur le métré validé en vigueur.")
+
+
+def _quote_number(db: Session, ctx: Context, data: "QuoteData") -> str:
+    """Numéro attribué à la validation : DV-AAAA-NNNN, puis « -v2 », « -v3 » pour les versions suivantes."""
+    base = db.scalar(
+        select(QuoteVersion.reference).where(
+            QuoteVersion.estimate_id == data.estimate_id, QuoteVersion.reference.is_not(None)
+        ).order_by(QuoteVersion.version_no).limit(1)
+    )
+    if base is None:
+        year = now().year
+        counter = db.get(OrgCounter, (ctx.organization_id, "estimate", year), with_for_update=True)
+        if counter is None:
+            counter = OrgCounter(organization_id=ctx.organization_id, name="estimate", year=year, value=0)
+            db.add(counter)
+        counter.value += 1
+        db.flush()
+        return f"DV-{year}-{counter.value:04d}" + (f"-v{data.version_no}" if data.version_no > 1 else "")
+    return f"{base.split('-v')[0]}-v{data.version_no}"
+
+
+def _audit_quote(db: Session, ctx: Context, request: Request, row: QuoteVersion, before: str | None) -> None:
+    if row.status == before or row.status == "draft":
+        return
+    action = {"validated": "estimate.validate", "sent": "estimate.send", "accepted": "estimate.accept",
+              "refused": "estimate.refuse", "superseded": "estimate.supersede"}[row.status]
+    audit(db, action, request=request, organization_id=ctx.organization_id, actor_id=ctx.user.id,
+          actor_role=ctx.main_role.value, entity_table="estimate_versions", entity_id=row.id, project_id=row.project_id,
+          details={"reference": row.reference, "ttc": (row.totals or {}).get("ttc"), "currency": row.currency})
 
 
 def _record_prices(db: Session, ctx: Context, entity: str, row: Any, before: dict[str, Any] | None) -> None:
@@ -472,8 +624,13 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
         if change.deleted:
             return result("applied")  # créé puis supprimé hors ligne : rien à faire
         data = schema.model_validate(change.data)
-        _check_links(db, ctx, change.entity, data)
+        if change.entity == "quotes":
+            _check_quote(db, ctx, data, None)  # type: ignore[arg-type]
+        else:
+            _check_links(db, ctx, change.entity, data)
         values = _values(data)
+        if change.entity == "quotes" and data.status != "draft":  # type: ignore[attr-defined]
+            values["reference"] = _quote_number(db, ctx, data)  # type: ignore[arg-type]
         if change.entity == "projects":
             values["reference"] = _next_reference(db, ctx.organization_id)
             values["manager_id"] = values["manager_id"] or ctx.user.id
@@ -491,8 +648,10 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
         _record_prices(db, ctx, change.entity, row, None)
         if change.entity == "projects":
             _audit_metre(db, ctx, request, row, None)  # type: ignore[arg-type]
+        if change.entity == "quotes":
+            _audit_quote(db, ctx, request, row, None)  # type: ignore[arg-type]
         if change.entity not in ("rooms",) and change.entity not in LIBRARY:
-            audit(db, f"{change.entity[:-1]}.create", request=request, organization_id=ctx.organization_id,
+            audit(db, "estimate.create" if change.entity == "quotes" else f"{change.entity[:-1]}.create", request=request, organization_id=ctx.organization_id,
                   actor_id=ctx.user.id, actor_role=ctx.main_role.value, entity_table=change.entity, entity_id=row.id,
                   project_id=row.id if change.entity == "projects" else None)
         db.refresh(row)
@@ -505,6 +664,8 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
     if change.deleted:
         if row.deleted_at is not None:
             return result("applied", r=row)
+        if change.entity == "quotes" and row.status != "draft":
+            raise _Rejected("Un devis validé ne peut pas être supprimé.")
         if change.entity == "clients":
             if Role.admin not in ctx.roles:
                 raise _Rejected("Seul un administrateur peut supprimer une fiche client.")
@@ -539,7 +700,11 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
               project_id=row.id if change.entity == "projects" else None)
     else:
         data = schema.model_validate(change.data)
-        _check_links(db, ctx, change.entity, data)
+        quote_status_before = row.status if change.entity == "quotes" else None
+        if change.entity == "quotes":
+            _check_quote(db, ctx, data, row)  # type: ignore[arg-type]
+        else:
+            _check_links(db, ctx, change.entity, data)
         if change.entity == "projects" and Role.admin not in ctx.roles and data.manager_id != row.manager_id:
             raise _Rejected("Seul un administrateur peut changer le responsable d'un projet.")
         if change.entity == "rooms" and data.project_id != row.project_id:  # type: ignore[attr-defined]
@@ -559,6 +724,8 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
         values = _values(data)
         if change.entity == "rooms":
             values.update(_computed_room_values(data))  # type: ignore[arg-type]
+        if change.entity == "quotes" and quote_status_before == "draft" and data.status != "draft":  # type: ignore[attr-defined]
+            values["reference"] = _quote_number(db, ctx, data)  # type: ignore[arg-type]
         prices_before = {f: getattr(row, f, None) for f in PRICE_FIELDS}
         metre_before = getattr(row, "metre_validation", None)
         for key, value in values.items():
@@ -566,6 +733,8 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
         _record_prices(db, ctx, change.entity, row, prices_before)
         if change.entity == "projects":
             _audit_metre(db, ctx, request, row, metre_before)  # type: ignore[arg-type]
+        if change.entity == "quotes":
+            _audit_quote(db, ctx, request, row, quote_status_before)  # type: ignore[arg-type]
         if regained:
             db.flush()
             _resequence(db, row)  # type: ignore[arg-type]
@@ -576,7 +745,7 @@ def _apply(db: Session, ctx: Context, change: Change, request: Request) -> Chang
     return result("applied", r=row)
 
 
-JSON_FIELDS = ("walls", "openings", "counts", "components", "metre_validation")
+JSON_FIELDS = ("walls", "openings", "counts", "components", "metre_validation", "lines", "totals")
 
 
 def _values(data: BaseModel) -> dict[str, Any]:

@@ -4,9 +4,11 @@ import 'format.dart';
 
 const Map<QuoteStatus, String> kStatusLabel = {
   QuoteStatus.draft: 'Brouillon',
-  QuoteStatus.sent: 'Devis envoyé',
+  QuoteStatus.validated: 'Validé',
+  QuoteStatus.sent: 'Envoyé',
   QuoteStatus.accepted: 'Accepté',
   QuoteStatus.refused: 'Refusé',
+  QuoteStatus.superseded: 'Remplacé',
 };
 
 const Map<QuantityBase, String> kBaseLabel = {
@@ -27,11 +29,11 @@ const List<String> kUnits = ['m²', 'm', 'm³', 'kg', 'l', 'u', 'forfait'];
 
 /// Message envoyé au client avec le devis (WhatsApp, e-mail).
 String quoteMessage(Company c, Project p, Quote q, {Client? client}) {
-  final t = quoteTotals(p, q, c.vatPercent);
+  final t = quoteTotals(p, q);
   final name = client?.displayName.trim() ?? '';
   return '${name.isEmpty ? 'Bonjour' : 'Bonjour $name'},\n'
-      'Voici notre devis ${q.number} pour ${p.address}, ${p.city}.\n'
-      'Total HT : ${dh(t.ht)} - TVA ${fmt2(c.vatPercent)} % : ${dh(t.vat)} - Total TTC : ${dh(t.ttc)}.\n'
-      'Acompte demandé : ${dh(t.deposit)}. Devis valable ${c.validityDays} jours.\n'
+      'Voici notre devis ${q.displayNumber} pour ${[p.address, p.city].where((x) => x.isNotEmpty).join(', ')}.\n'
+      'Total HT : ${money(t.ht, q.currency)} - TVA : ${money(t.vat, q.currency)} - Total TTC : ${money(t.ttc, q.currency)}.\n'
+      '${q.depositBp > 0 ? 'Acompte demandé : ${money(t.deposit, q.currency)}. ' : ''}Devis valable ${q.validityDays} jours.\n'
       '${c.name} - ${c.phone}';
 }

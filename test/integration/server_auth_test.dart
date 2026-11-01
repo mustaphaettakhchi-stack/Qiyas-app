@@ -394,7 +394,7 @@ void main() {
     admin.addLineFromWorkItem(adminProject, quote, admin.workItems.singleWhere((w) => w.code == 'ELE-01'));
     expect(lineQuantity(adminProject, quote.lines[0]), 22); // 20 m² + 10 % de perte
     expect(lineQuantity(adminProject, quote.lines[1]), 6); // 6 prises comptées
-    expect(quoteTotals(adminProject, quote, 20).ht, 22 * 25000 + 6 * 15000);
+    expect(quoteTotals(adminProject, quote).ht, 22 * 25000 + 6 * 15000);
 
     // Une cote modifiée ensuite rend le métré « à revalider » sur l'autre téléphone.
     collab.mutate(() => room.walls[0].length = 5.2, touch: project, room: room);
@@ -402,4 +402,83 @@ void main() {
     await adminSync.syncNow();
     expect(metreState(admin.project(project.id)!), MetreState.stale);
   }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('Devis : brouillon du collaborateur, validation et numéro, figé, envoyé, accepté, nouvelle version', () async {
+    final adminSession = await loginPhone(email, password, _adminSecret!);
+    final collabSession = await loginPhone(_collabEmail!, _collabPassword, _collabSecret!);
+    final (admin, adminSync) = await phone(adminSession);
+    final (collab, collabSync) = await phone(collabSession);
+    admin.data.company.ice = '001234567000089';
+    collab.data.company.ice = '001234567000089';
+    await adminSync.syncNow();
+    await collabSync.syncNow();
+
+    // 1. Le collaborateur relève, valide le métré et prépare un brouillon.
+    final client = collab.createClient(name: 'محمد بنعلي');
+    final project = collab.createProject(clientId: client.id);
+    final room = collab.addRoom(project);
+    collab.mutate(() {
+      room
+        ..heightSource = MeasureSource.manual
+        ..walls = [for (final (i, l) in [5.0, 4.0, 5.0, 4.0].indexed) Wall(id: 'w$i', length: l)]
+        ..counts = {'prises': 3};
+    }, touch: project, room: room);
+    collab.mutate(() => project.metreValidation = buildValidation(project, userId: collabSession.user!.id, userName: 'Collab'),
+        touch: project, meta: true);
+    final quote = collab.createQuote(project);
+    final carrelage = collab.workItems.firstWhere((w) => w.base == QuantityBase.floor && w.salePriceCents != null);
+    final prise = collab.workItems.firstWhere((w) => w.code == 'ELE-01');
+    collab.addLineFromWorkItem(project, quote, carrelage);
+    collab.addLineFromWorkItem(project, quote, prise);
+    collab.editQuote(project, quote, () => quote.lines.last.vatRateBp = 1000);
+    expect(collab.validationProblems(project, quote, isAdmin: false), ['Seul un administrateur peut valider un devis.']);
+    await collabSync.syncNow();
+    expect(collab.pendingCount, 0, reason: collabSync.lastError);
+    expect(quote.number, isNull);
+
+    // 2. L'administrateur reçoit le brouillon, le valide : le serveur attribue le numéro.
+    await adminSync.syncNow();
+    final adminProject = admin.project(project.id)!;
+    final adminQuote = adminProject.quotes.singleWhere((q) => q.id == quote.id);
+    final collabTotals = quoteTotals(project, quote);
+    expect(quoteTotals(adminProject, adminQuote).ttc, collabTotals.ttc);
+    expect(admin.validationProblems(adminProject, adminQuote, isAdmin: true), isEmpty);
+    admin.validateQuote(adminProject, adminQuote, userId: adminSession.user!.id);
+    await adminSync.syncNow();
+    expect(adminQuote.syncError, isNull);
+    expect(adminQuote.number, matches(RegExp(r'^DV-\d{4}-\d{4}$')));
+
+    // 3. Le collaborateur reçoit le devis validé, numéroté et figé.
+    await collabSync.syncNow();
+    expect(quote.status, QuoteStatus.validated);
+    expect(quote.number, adminQuote.number);
+    collab.mutate(() => room.walls[0].length = 6, touch: project, room: room);
+    expect(quoteTotals(project, quote).ttc, collabTotals.ttc, reason: 'quantités figées à la validation');
+    // Une modification forcée d'un devis figé est refusée par le serveur.
+    collab.editQuote(project, quote, () => quote.lines.first.unitPriceCents += 1);
+    await collabSync.syncNow();
+    expect(quote.syncError, contains('nouvelle version'));
+
+    // 4. Envoi et acceptation par l'administrateur.
+    admin.markSent(adminProject, adminQuote);
+    await adminSync.syncNow();
+    admin.decide(adminProject, adminQuote, accepted: true, note: 'Accord signé sur place');
+    await adminSync.syncNow();
+    expect(adminQuote.syncError, isNull);
+    expect(adminQuote.status, QuoteStatus.accepted);
+
+    // 5. Nouvelle version d'un devis validé : numéro « -v2 », l'ancienne est remplacée.
+    final q2 = admin.createQuote(adminProject);
+    admin.addLineFromWorkItem(adminProject, q2, admin.workItem(carrelage.id)!);
+    await adminSync.syncNow();
+    admin.mutate(() => adminProject.metreValidation = buildValidation(adminProject, userId: adminSession.user!.id, userName: 'Admin'),
+        touch: adminProject, meta: true);
+    admin.validateQuote(adminProject, q2, userId: adminSession.user!.id);
+    await adminSync.syncNow();
+    final v2 = admin.newVersion(adminProject, q2);
+    admin.validateQuote(adminProject, v2, userId: adminSession.user!.id);
+    await adminSync.syncNow();
+    expect(q2.status, QuoteStatus.superseded);
+    expect(v2.number, '${q2.number}-v2');
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
 }

@@ -52,4 +52,39 @@ void main() {
     expect(bow.selfIntersecting, isTrue);
     expect(outline([6, 2, 2, 2, 4, 4], [90, 90, 270, 90, 90, 90]).selfIntersecting, isFalse);
   });
+
+  group('Cas de devis partagés avec le serveur', () {
+    final quoteCases = (jsonDecode(File('shared/quote_cases.json').readAsStringSync()) as Map)['cases'] as List;
+    for (final raw in quoteCases) {
+      final c = Map<String, dynamic>.from(raw as Map);
+      test(c['name'] as String, () {
+        final q = Quote(id: 'q', date: DateTime(2026))
+          ..overheadBp = c['overhead_bp'] as int
+          ..marginBp = c['margin_bp'] as int;
+        final lines = [
+          for (final raw in c['lines'] as List)
+            (() {
+              final l = Map<String, dynamic>.from(raw as Map);
+              final line = QuoteLine(
+                id: 'l',
+                label: 'x',
+                pricing: l['pricing'] as String,
+                unitPriceCents: (l['unit_price_cents'] as int?) ?? 0,
+                materialCostCents: l['material_cost_cents'] as int?,
+                labourCostCents: l['labour_cost_cents'] as int?,
+                vatRateBp: l['vat_rate_bp'] as int,
+              );
+              return ((l['quantity'] as num).toDouble(), lineUnitPriceCents(q, line), line.vatRateBp);
+            })(),
+        ];
+        final t = computeTotals(lines, c['discount_bp'] as int, c['deposit_bp'] as int);
+        final e = Map<String, dynamic>.from(c['expected'] as Map);
+        expect([for (final (qty, price, _) in lines) lineAmountCents(qty, price!)], e['line_totals']);
+        if (e.containsKey('unit_prices')) expect([for (final (_, price, _) in lines) price], e['unit_prices']);
+        expect([t.subtotal, t.discount, t.ht, t.vat, t.ttc, t.deposit],
+            [e['subtotal'], e['discount'], e['ht'], e['vat_total'], e['ttc'], e['deposit']]);
+        expect(t.toServer()['vat'], e['vat']);
+      });
+    }
+  });
 }

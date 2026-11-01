@@ -201,7 +201,7 @@ class ProjectScreen extends StatelessWidget {
           for (final q in p.quotes.reversed)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(q.number),
+              title: Text(q.displayNumber),
               subtitle: Text(frDate(q.date)),
               trailing: StatusPill(q.status),
               onTap: () => open(QuoteScreen(projectId: p.id, quoteId: q.id)),

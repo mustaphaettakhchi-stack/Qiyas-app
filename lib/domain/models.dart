@@ -2,7 +2,8 @@
 // Les objets sont volontairement mutables : l'état est centralisé dans AppState,
 // qui sauvegarde et notifie l'interface après chaque modification.
 
-enum QuoteStatus { draft, sent, accepted, refused }
+/// Statut d'une version de devis. Seul le brouillon est modifiable.
+enum QuoteStatus { draft, validated, sent, accepted, refused, superseded }
 
 /// Base de quantité d'un ouvrage ou d'une ligne de devis.
 /// [walls] = murs nets d'ouvertures ; [count] = élément compté pièce par pièce ([QuoteLine.countKey]) ;
@@ -649,6 +650,12 @@ class QuoteLine {
     this.manual = false,
     this.unitPriceCents = 0,
     this.frozenQuantity,
+    this.pricing = 'direct',
+    this.materialCostCents,
+    this.labourCostCents,
+    this.vatRateBp = 2000,
+    this.sourcePriceCents,
+    this.sourceCurrency,
   });
 
   final String id;
@@ -662,7 +669,7 @@ class QuoteLine {
   /// Taux de perte appliqué à la quantité issue du métré (points de base), affiché sur la ligne.
   int wasteRateBp;
 
-  /// Vrai tant qu'aucun prix n'a été saisi : la ligne bloque l'envoi du devis.
+  /// Vrai tant qu'aucun prix n'a été saisi : la ligne bloque la validation du devis.
   bool priceMissing;
   String label;
   String description;
@@ -672,27 +679,28 @@ class QuoteLine {
   /// Quantité saisie à la main (utilisée si [manual] ou si la base est libre).
   double quantity;
 
-  /// Vrai quand l'artisan a modifié la quantité : elle ne suit plus le métré.
+  /// Vrai quand la quantité a été modifiée à la main : elle ne suit plus le métré.
   bool manual;
+
+  /// Prix unitaire HT de vente, dans la devise du devis (méthode « direct »).
   int unitPriceCents;
 
-  /// Quantité figée à l'envoi du devis. Un devis envoyé ne bouge plus.
+  /// Quantité figée à la validation du devis.
   double? frozenQuantity;
 
-  QuoteLine copyWith({required String id}) => QuoteLine(
-        id: id,
-        workItemId: workItemId,
-        countKey: countKey,
-        wasteRateBp: wasteRateBp,
-        priceMissing: priceMissing,
-        label: label,
-        description: description,
-        unit: unit,
-        base: base,
-        quantity: quantity,
-        manual: manual,
-        unitPriceCents: unitPriceCents,
-      );
+  /// « direct » : prix de vente saisi ; « cost_plus » : (fournitures + main-d'œuvre) × frais × marge.
+  String pricing;
+  int? materialCostCents;
+  int? labourCostCents;
+
+  /// Taux de TVA de la ligne, en points de base (2000 = 20 %).
+  int vatRateBp;
+
+  /// Prix d'origine en MAD (bibliothèque), pour recalculer la conversion d'un devis en euros.
+  int? sourcePriceCents;
+  String? sourceCurrency;
+
+  QuoteLine copyWith({required String id}) => QuoteLine.fromJson({...toJson(), 'id': id, 'frozen': null});
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -708,6 +716,12 @@ class QuoteLine {
         'manual': manual,
         'pu': unitPriceCents,
         'frozen': frozenQuantity,
+        'pricing': pricing,
+        'mat': materialCostCents,
+        'lab': labourCostCents,
+        'vat': vatRateBp,
+        'src': sourcePriceCents,
+        'srcCur': sourceCurrency,
       };
 
   factory QuoteLine.fromJson(Map<String, dynamic> j) => QuoteLine(
@@ -724,55 +738,258 @@ class QuoteLine {
         manual: j['manual'] == true,
         unitPriceCents: _i(j['pu']),
         frozenQuantity: (j['frozen'] as num?)?.toDouble(),
+        pricing: _s(j['pricing'], 'direct'),
+        materialCostCents: _iOrNull(j['mat']),
+        labourCostCents: _iOrNull(j['lab']),
+        vatRateBp: _i(j['vat'], -1),
+        sourcePriceCents: _iOrNull(j['src']),
+        sourceCurrency: j['srcCur'] as String?,
       );
 }
 
-class Quote {
+/// Une version de devis (table estimate_versions). Les versions d'un même devis partagent [estimateId].
+class Quote with Syncable {
   Quote({
     required this.id,
-    required this.number,
-    this.version = 1,
+    String? estimateId,
+    this.number,
+    this.versionNo = 1,
     required this.date,
     this.status = QuoteStatus.draft,
-    this.discountPercent = 0,
-    this.depositPercent = 30,
+    this.title = '',
+    this.validityDays = 30,
+    this.currency = 'MAD',
+    this.exchangeRateE4,
+    this.exchangeRateDate,
+    this.exchangeRateSource = '',
+    this.discountBp = 0,
+    this.overheadBp = 0,
+    this.marginBp = 0,
+    this.depositBp = 3000,
     List<QuoteLine>? lines,
-  }) : lines = lines ?? [];
+    this.metreFingerprint,
+    this.validatedAt,
+    this.validatedBy,
+    this.sentAt,
+    this.decidedAt,
+    this.decisionNote = '',
+    this.legacy = false,
+  })  : estimateId = estimateId ?? id,
+        lines = lines ?? [];
 
   final String id;
-  String number;
-  int version;
+  final String estimateId;
+
+  /// Numéro attribué par le serveur à la validation (DV-AAAA-NNNN, « -v2 »…) ; null pour un brouillon.
+  String? number;
+  int versionNo;
   DateTime date;
   QuoteStatus status;
-  double discountPercent;
-  double depositPercent;
+  String title;
+  int validityDays;
+  String currency;
+
+  /// Taux de change : nombre de MAD pour 1 EUR, × 10 000 (10,8500 → 108500).
+  int? exchangeRateE4;
+  DateTime? exchangeRateDate;
+  String exchangeRateSource;
+  int discountBp;
+
+  /// Frais indirects et marge (prix calculés), en points de base.
+  int overheadBp;
+  int marginBp;
+  int depositBp;
   List<QuoteLine> lines;
+
+  /// Empreinte du métré validé sur lequel repose le devis.
+  String? metreFingerprint;
+  DateTime? validatedAt;
+  String? validatedBy;
+  DateTime? sentAt;
+  DateTime? decidedAt;
+  String decisionNote;
+
+  /// Devis envoyé avec l'ancienne version Qiyas : conservé sur le téléphone, jamais synchronisé.
+  bool legacy;
 
   bool get locked => status != QuoteStatus.draft;
 
+  /// Libellé affiché : numéro, ou « Brouillon » tant que le serveur n'en a pas attribué.
+  String get displayNumber => number ?? (status == QuoteStatus.draft ? 'Brouillon v$versionNo' : 'Numéro à la synchronisation');
+
+  static String _date(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   Map<String, dynamic> toJson() => {
         'id': id,
+        'estimate': estimateId,
         'num': number,
-        'version': version,
+        'version': versionNo,
         'date': date.toIso8601String(),
         'status': status.name,
-        'remise': discountPercent,
-        'acompte': depositPercent,
+        'title': title,
+        'validity': validityDays,
+        'currency': currency,
+        'rate': exchangeRateE4,
+        'rateDate': exchangeRateDate?.toIso8601String(),
+        'rateSource': exchangeRateSource,
+        'discount_bp': discountBp,
+        'overhead_bp': overheadBp,
+        'margin_bp': marginBp,
+        'deposit_bp': depositBp,
         'lines': lines.map((l) => l.toJson()).toList(),
+        'fingerprint': metreFingerprint,
+        'validatedAt': validatedAt?.toIso8601String(),
+        'validatedBy': validatedBy,
+        'sentAt': sentAt?.toIso8601String(),
+        'decidedAt': decidedAt?.toIso8601String(),
+        'decisionNote': decisionNote,
+        'legacy': legacy,
+        ...syncJson(),
       };
 
-  factory Quote.fromJson(Map<String, dynamic> j) => Quote(
-        id: _s(j['id']),
-        number: _s(j['num']),
-        version: _i(j['version'], 1),
-        date: DateTime.tryParse(_s(j['date'])) ?? DateTime.now(),
-        status: _enumByName(QuoteStatus.values, j['status'], QuoteStatus.draft),
-        discountPercent: _d(j['remise']),
-        depositPercent: _d(j['acompte'], 30),
-        lines: (j['lines'] as List? ?? [])
-            .map((e) => QuoteLine.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-      );
+  factory Quote.fromJson(Map<String, dynamic> j) {
+    final isNew = j.containsKey('deposit_bp');
+    final status = _enumByName(QuoteStatus.values, j['status'], QuoteStatus.draft);
+    DateTime? dt(Object? v) => v == null ? null : DateTime.tryParse(_s(v));
+    final q = Quote(
+      id: _s(j['id']),
+      estimateId: j['estimate'] as String?,
+      number: j['num'] as String?,
+      versionNo: _i(j['version'], 1),
+      date: dt(j['date']) ?? DateTime.now(),
+      status: status,
+      title: _s(j['title']),
+      validityDays: _i(j['validity'], 30),
+      currency: _s(j['currency'], 'MAD'),
+      exchangeRateE4: _iOrNull(j['rate']),
+      exchangeRateDate: dt(j['rateDate']),
+      exchangeRateSource: _s(j['rateSource']),
+      // Format Qiyas : remise et acompte en pourcentage décimal.
+      discountBp: isNew ? _i(j['discount_bp']) : (_d(j['remise']) * 100).round(),
+      overheadBp: _i(j['overhead_bp']),
+      marginBp: _i(j['margin_bp']),
+      depositBp: isNew ? _i(j['deposit_bp']) : (_d(j['acompte'], 30) * 100).round(),
+      lines: (j['lines'] as List? ?? []).map((e) => QuoteLine.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+      metreFingerprint: j['fingerprint'] as String?,
+      validatedAt: dt(j['validatedAt']),
+      validatedBy: j['validatedBy'] as String?,
+      sentAt: dt(j['sentAt']),
+      decidedAt: dt(j['decidedAt']),
+      decisionNote: _s(j['decisionNote']),
+      // Devis Qiyas déjà envoyés : numérotés localement, ils restent sur le téléphone.
+      legacy: j['legacy'] == true || (!isNew && status != QuoteStatus.draft),
+    );
+    if (!isNew && status == QuoteStatus.draft) q.number = null; // le serveur attribuera le numéro
+    q.readSync(j);
+    return q;
+  }
+
+  /// Données envoyées au serveur. [lineQuantities] et [totals] sont calculés par l'application
+  /// (lib/domain/calculations.dart) ; le serveur les recalcule et refuse tout écart.
+  Map<String, dynamic> toServer({
+    required String projectId,
+    required List<double> lineQuantities,
+    required Map<String, dynamic> totals,
+  }) =>
+      {
+        'estimate_id': estimateId,
+        'project_id': projectId,
+        'version_no': versionNo,
+        'status': status.name,
+        'title': title.trim(),
+        'issue_date': _date(date),
+        'validity_days': validityDays,
+        'currency': currency,
+        'exchange_rate_e4': currency == 'EUR' ? exchangeRateE4 : null,
+        'exchange_rate_date': currency == 'EUR' && exchangeRateDate != null ? _date(exchangeRateDate!) : null,
+        'exchange_rate_source': exchangeRateSource.trim(),
+        'discount_bp': discountBp,
+        'overhead_bp': overheadBp,
+        'margin_bp': marginBp,
+        'deposit_bp': depositBp,
+        'lines': [
+          for (final (i, l) in lines.indexed)
+            {
+              'id': l.id,
+              'work_item_id': l.workItemId,
+              'label': l.label.trim().isEmpty ? 'Ligne' : l.label.trim(),
+              'description': l.description.trim(),
+              'unit': l.unit,
+              'quantity_basis': kBaseCodes[l.base],
+              'count_key': l.base == QuantityBase.count ? l.countKey : null,
+              'waste_rate_bp': l.wasteRateBp,
+              'quantity': lineQuantities[i],
+              'manual': l.manual,
+              'pricing': l.pricing,
+              'unit_price_cents': l.pricing == 'direct' && !l.priceMissing ? l.unitPriceCents : null,
+              'material_cost_cents': l.pricing == 'cost_plus' ? l.materialCostCents : null,
+              'labour_cost_cents': l.pricing == 'cost_plus' ? l.labourCostCents : null,
+              'vat_rate_bp': l.vatRateBp,
+              'trace': '',
+            },
+        ],
+        'totals': totals,
+        'metre_fingerprint': metreFingerprint,
+        'validated_at': validatedAt?.toUtc().toIso8601String(),
+        'validated_by': validatedBy,
+        'sent_at': sentAt?.toUtc().toIso8601String(),
+        'decided_at': decidedAt?.toUtc().toIso8601String(),
+        'decision_note': decisionNote.trim(),
+      };
+
+  /// Applique la version du serveur (quantités figées reprises telles quelles si la version est figée).
+  void applyServer(Map<String, dynamic> d, {String? reference}) {
+    DateTime? dt(Object? v) => v == null ? null : DateTime.tryParse(_s(v));
+    number = reference;
+    versionNo = _i(d['version_no'], 1);
+    status = _enumByName(QuoteStatus.values, d['status'], QuoteStatus.draft);
+    title = _s(d['title']);
+    date = dt(d['issue_date']) ?? date;
+    validityDays = _i(d['validity_days'], 30);
+    currency = _s(d['currency'], 'MAD');
+    exchangeRateE4 = _iOrNull(d['exchange_rate_e4']);
+    exchangeRateDate = dt(d['exchange_rate_date']);
+    exchangeRateSource = _s(d['exchange_rate_source']);
+    discountBp = _i(d['discount_bp']);
+    overheadBp = _i(d['overhead_bp']);
+    marginBp = _i(d['margin_bp']);
+    depositBp = _i(d['deposit_bp']);
+    metreFingerprint = d['metre_fingerprint'] as String?;
+    validatedAt = dt(d['validated_at']);
+    validatedBy = d['validated_by'] as String?;
+    sentAt = dt(d['sent_at']);
+    decidedAt = dt(d['decided_at']);
+    decisionNote = _s(d['decision_note']);
+    final frozen = status != QuoteStatus.draft;
+    lines = [
+      for (final raw in d['lines'] as List? ?? const [])
+        (() {
+          final l = Map<String, dynamic>.from(raw as Map);
+          final price = _iOrNull(l['unit_price_cents']);
+          final quantity = _d(l['quantity']);
+          return QuoteLine(
+            id: _s(l['id']),
+            workItemId: l['work_item_id'] as String?,
+            label: _s(l['label']),
+            description: _s(l['description']),
+            unit: _s(l['unit']),
+            base: baseFromCode(l['quantity_basis']),
+            countKey: l['count_key'] as String?,
+            wasteRateBp: _i(l['waste_rate_bp']),
+            quantity: quantity,
+            manual: l['manual'] == true,
+            pricing: _s(l['pricing'], 'direct'),
+            unitPriceCents: price ?? 0,
+            priceMissing: _s(l['pricing'], 'direct') == 'direct' && price == null,
+            materialCostCents: _iOrNull(l['material_cost_cents']),
+            labourCostCents: _iOrNull(l['labour_cost_cents']),
+            vatRateBp: _i(l['vat_rate_bp']),
+            frozenQuantity: frozen ? quantity : null,
+          );
+        })(),
+    ];
+  }
 }
 
 /// État de synchronisation commun aux fiches partagées avec le serveur.
@@ -936,7 +1153,7 @@ class Project with Syncable {
   bool get archived => status == 'archived';
   /// Données présentes uniquement sur ce téléphone (perdues si le projet était supprimé ici).
   bool get hasLocalOnlyData =>
-      quotes.isNotEmpty || photoPaths.isNotEmpty || rooms.any((r) => r.dirty || r.photoPaths.isNotEmpty);
+      quotes.any((q) => q.legacy || q.dirty) || photoPaths.isNotEmpty || rooms.any((r) => r.dirty || r.photoPaths.isNotEmpty);
   Quote? get lastQuote => quotes.isEmpty ? null : quotes.last;
 
   Map<String, dynamic> toServer() => {
@@ -1095,7 +1312,21 @@ class AppData {
         'last_sync': lastSyncAt?.toIso8601String(),
       };
 
-  factory AppData.fromJson(Map<String, dynamic> j) => AppData(
+  factory AppData.fromJson(Map<String, dynamic> j) => AppData._fromJson(j).._defaultLineVat();
+
+  /// Lignes de devis Qiyas : TVA unique de l'entreprise reprise ligne par ligne.
+  void _defaultLineVat() {
+    final vat = (company.vatPercent * 100).round();
+    for (final p in projects) {
+      for (final q in p.quotes) {
+        for (final l in q.lines) {
+          if (l.vatRateBp < 0) l.vatRateBp = vat;
+        }
+      }
+    }
+  }
+
+  factory AppData._fromJson(Map<String, dynamic> j) => AppData(
         company: Company.fromJson(Map<String, dynamic>.from(j['company'] as Map? ?? {})),
         // Les « prestations » Qiyas deviennent des ouvrages de la bibliothèque.
         workItems: j.containsKey('work_items')

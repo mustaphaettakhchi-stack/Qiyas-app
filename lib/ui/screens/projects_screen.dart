@@ -91,7 +91,7 @@ class _ProjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final q = p.lastQuote;
-    final ttc = q == null ? null : quoteTotals(p, q, vat).ttc;
+    final totals = q == null ? null : quoteTotals(p, q);
     final t = Theme.of(context).textTheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -113,7 +113,7 @@ class _ProjectCard extends StatelessWidget {
                   style: t.bodySmall,
                 ),
               ),
-              Text(ttc == null ? '—' : '${dh(ttc)} TTC', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+              Text(totals == null ? '—' : '${money(totals.ttc, q!.currency)} TTC', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
             ]),
           ]),
         ),
