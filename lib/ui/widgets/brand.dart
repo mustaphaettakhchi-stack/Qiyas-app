@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Logo Groupe LAMAALAM sur sa tuile claire d'origine (jamais détouré ni recoloré).
+/// Logo Group LAMAALAM sur sa tuile claire d'origine (jamais détouré ni recoloré).
 class LogoTile extends StatelessWidget {
   const LogoTile({super.key, this.size = 140});
   final double size;
@@ -9,11 +9,11 @@ class LogoTile extends StatelessWidget {
   Widget build(BuildContext context) => ClipRRect(
         borderRadius: BorderRadius.circular(size * 0.12),
         child: Image.asset(
-          'assets/branding/logo_lamaalam_sans_telephone_512.png',
+          'assets/branding/logo_lamaalam_corrige_512.png',
           width: size,
           height: size,
           fit: BoxFit.cover,
-          semanticLabel: 'Logo Groupe LAMAALAM',
+          semanticLabel: 'Logo Group LAMAALAM',
         ),
       );
 }

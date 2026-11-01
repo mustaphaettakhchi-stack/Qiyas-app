@@ -129,7 +129,8 @@ Statuts : **APPROUVÉ** (intégrable) · **À EXAMINER** (suspendu, décision LA
 | Composant | Source | Licence | Usage commercial | Obligations | Statut |
 | --- | --- | --- | --- | --- | --- |
 | Noto Sans, Noto Sans Arabic (à re-vérifier) | github.com/notofonts | SIL OFL-1.1 | Oui | Ne pas vendre la police seule ; conserver la licence | APPROUVÉ |
-| Logo Groupe LAMAALAM | Fourni par LAMAALAM | Propriété de Groupe LAMAALAM | — | Ne pas altérer | **En attente du fichier (D-07)** |
+| Logo Group LAMAALAM | Fourni par LAMAALAM le 01/11/2026 | Propriété de Group LAMAALAM (à confirmer, voir `assets/branding/README.md`) | — | Ne pas altérer sans instruction ; texte corrigé sur instruction | APPROUVÉ (réserves notées) |
+| Police Arimo (outil : correction du texte du logo ; non embarquée) | github.com/googlefonts/arimo | relevée le 01/11/2026 sur github.com/google/fonts | SIL OFL-1.1 (vérifié, fichier OFL.txt) | Oui | Aucune pour une image produite avec la police ; conserver la licence si la police est redistribuée | — | Faible | APPROUVÉ |
 | Photographies d'arrière-plan (10) | Wikimedia Commons / Openverse, **fichier par fichier** | CC0, domaine public ou CC BY (à préférer) ; CC BY-SA acceptable avec attribution et partage à l'identique du fichier dérivé | Oui | Attribution dans l'écran « Crédits » et `assets/backgrounds/CREDITS.md` | À EXAMINER (sélection en Phase 1) |
 | Images Unsplash / Pexels | — | Licences propres, non Open Source, restrictions (pas de compilation, pas de revente) | Ambigu | — | REFUSÉ |
 | Licences CC « NC » ou « ND » | — | Non commercial / pas de modification | **Non** | — | REFUSÉ |

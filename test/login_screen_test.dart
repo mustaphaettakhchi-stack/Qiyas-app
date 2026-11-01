@@ -24,7 +24,7 @@ void main() {
 
   testWidgets('Écran de connexion : logo, champs, aucune entrée de démonstration', (tester) async {
     await tester.pumpWidget(_wrap(session));
-    expect(find.bySemanticsLabel('Logo Groupe LAMAALAM'), findsOneWidget);
+    expect(find.bySemanticsLabel('Logo Group LAMAALAM'), findsOneWidget);
     expect(find.text('Adresse e-mail'), findsOneWidget);
     expect(find.textContaining('J\'ai reçu un lien'), findsOneWidget);
     expect(find.text('Mot de passe'), findsOneWidget);

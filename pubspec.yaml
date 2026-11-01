@@ -32,4 +32,4 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/branding/logo_lamaalam_sans_telephone_512.png
+    - assets/branding/logo_lamaalam_corrige_512.png
