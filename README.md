@@ -15,7 +15,9 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | Application : connexion au serveur, double authentification, invitation, gestion de l'équipe | Fait, testé de bout en bout contre le serveur réel |
 | Clients et projets partagés entre téléphones (synchronisation, conflits, références `LMA-AAAA-NNNN`) | Fait, testé de bout en bout ; pièces, photos et devis restent locaux |
 | Pièces de toute forme (mur par mur, angles), origine des cotes, contrôle de fermeture, plan, pièces synchronisées | Fait, testé (cas partagés application/serveur, bout en bout à deux téléphones) ; à valider sur 10 pièces réelles |
-| Synchronisation des devis et photos, espace client, bibliothèque, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
+| Métré par lot et par pièce, éléments comptés, perte affichée, validation du métré | Fait, testé (unitaires et bout en bout) |
+| Bibliothèque partagée (ouvrages, matériaux, fournisseurs), historique des prix, import CSV | Fait, testé ; démarre vide |
+| Devis complets (déboursés, marges, TVA multitaux, numérotation serveur), photos synchronisées, espace client, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
 
 ## Documentation
 

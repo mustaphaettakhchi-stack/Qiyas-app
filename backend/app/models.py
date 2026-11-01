@@ -248,6 +248,8 @@ class Project(Synced, Base):
     site_address: Mapped[str] = mapped_column(Text, default="")
     site_city: Mapped[str] = mapped_column(String(100), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Validation du métré (lot 1.4) : date, auteur, empreinte des cotes, cotes non vérifiées acceptées.
+    metre_validation: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class Room(Synced, Base):
@@ -273,10 +275,119 @@ class Room(Synced, Base):
     openings: Mapped[list] = mapped_column(JSONB, default=list)
     plan_x: Mapped[float | None] = mapped_column(Numeric(8, 2))
     plan_y: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    counts: Mapped[dict] = mapped_column(JSONB, default=dict)
     computed_floor_area_m2: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
     computed_perimeter_m: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
     closure_error_m: Mapped[float] = mapped_column(Numeric(8, 3), default=0)
     calc_version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+# ---------- bibliothèque (lot 1.5) ----------
+
+UNITS = ("m", "m2", "m3", "kg", "l", "u", "forfait")
+CATEGORIES = ("floor", "wall", "ceiling", "joinery", "electricity", "plumbing", "masonry", "other")
+QUANTITY_BASES = (
+    "floor", "ceiling", "walls_net", "walls_gross", "skirting", "perimeter", "volume", "doors", "windows", "count", "manual",
+)
+COUNT_KEYS = (
+    "prises", "interrupteurs", "points_lumineux", "points_eau", "evacuations", "sanitaires", "placards",
+    "cloisons_m2", "demolition_m2", "reprises_m2", "ouvertures_a_creer",
+)
+
+
+class Supplier(Synced, Base):
+    __tablename__ = "suppliers"
+
+    name: Mapped[str] = mapped_column(String(200))
+    contact_name: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(30), default="")
+    email: Mapped[str] = mapped_column(String(254), default="")
+    address: Mapped[str] = mapped_column(Text, default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    ice: Mapped[str] = mapped_column(String(15), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class Material(Synced, Base):
+    """Matériau ou fourniture. Un prix NULL signifie « non renseigné » : jamais de valeur par défaut."""
+
+    __tablename__ = "materials"
+    __table_args__ = (
+        CheckConstraint(_in("unit", UNITS), name="ck_materials_unit"),
+        CheckConstraint(_in("category", CATEGORIES), name="ck_materials_category"),
+        CheckConstraint(_in("currency", CURRENCIES), name="ck_materials_currency"),
+        CheckConstraint("waste_rate_bp BETWEEN 0 AND 10000", name="ck_materials_waste"),
+        CheckConstraint("purchase_price_cents IS NULL OR purchase_price_cents >= 0", name="ck_materials_purchase"),
+        CheckConstraint("sale_price_cents IS NULL OR sale_price_cents >= 0", name="ck_materials_sale"),
+    )
+
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("suppliers.id"), index=True)
+    category: Mapped[str] = mapped_column(String(20), default="other")
+    name: Mapped[str] = mapped_column(String(200))
+    brand: Mapped[str] = mapped_column(String(100), default="")
+    reference: Mapped[str] = mapped_column(String(100), default="")
+    unit: Mapped[str] = mapped_column(String(10), default="u")
+    pack_size: Mapped[float | None] = mapped_column(Numeric(12, 3))
+    waste_rate_bp: Mapped[int] = mapped_column(Integer, default=0)
+    purchase_price_cents: Mapped[int | None] = mapped_column(BigInteger)
+    sale_price_cents: Mapped[int | None] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(3), default="MAD")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    price_note: Mapped[str] = mapped_column(String(300), default="")
+    price_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkItem(Synced, Base):
+    """Ouvrage de la bibliothèque : désignation, unité, base de quantité, perte, prix."""
+
+    __tablename__ = "work_items"
+    __table_args__ = (
+        CheckConstraint(_in("unit", UNITS), name="ck_work_items_unit"),
+        CheckConstraint(_in("category", CATEGORIES), name="ck_work_items_category"),
+        CheckConstraint(_in("quantity_basis", QUANTITY_BASES), name="ck_work_items_basis"),
+        CheckConstraint(f"count_key IS NULL OR {_in('count_key', COUNT_KEYS)}", name="ck_work_items_count_key"),
+        CheckConstraint("(quantity_basis = 'count') = (count_key IS NOT NULL)", name="ck_work_items_count_basis"),
+        CheckConstraint(_in("currency", CURRENCIES), name="ck_work_items_currency"),
+        CheckConstraint("waste_rate_bp BETWEEN 0 AND 10000", name="ck_work_items_waste"),
+        CheckConstraint("sale_price_cents IS NULL OR sale_price_cents >= 0", name="ck_work_items_sale"),
+        CheckConstraint("labour_cost_cents IS NULL OR labour_cost_cents >= 0", name="ck_work_items_labour"),
+    )
+
+    code: Mapped[str] = mapped_column(String(30), default="")
+    category: Mapped[str] = mapped_column(String(20), default="other")
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    unit: Mapped[str] = mapped_column(String(10), default="u")
+    quantity_basis: Mapped[str] = mapped_column(String(20), default="manual")
+    count_key: Mapped[str | None] = mapped_column(String(30))
+    waste_rate_bp: Mapped[int] = mapped_column(Integer, default=0)
+    labour_cost_cents: Mapped[int | None] = mapped_column(BigInteger)
+    sale_price_cents: Mapped[int | None] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(3), default="MAD")
+    components: Mapped[list] = mapped_column(JSONB, default=list)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    price_note: Mapped[str] = mapped_column(String(300), default="")
+    price_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PriceHistory(Base):
+    """Historique des prix, en insertion seule (déclencheur), alimenté par le serveur."""
+
+    __tablename__ = "price_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    material_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("materials.id"), index=True)
+    work_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("work_items.id"), index=True)
+    purchase_price_cents: Mapped[int | None] = mapped_column(BigInteger)
+    sale_price_cents: Mapped[int | None] = mapped_column(BigInteger)
+    labour_cost_cents: Mapped[int | None] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(3))
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("suppliers.id"))
+    city: Mapped[str] = mapped_column(String(100), default="")
+    source_note: Mapped[str] = mapped_column(String(300), default="")
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    recorded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
 
 
 class OrgCounter(Base):

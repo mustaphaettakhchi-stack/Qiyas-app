@@ -42,13 +42,14 @@ Statuts : **APPROUVÉ** (intégrable) · **À EXAMINER** (suspendu, décision LA
 | connectivity_plus | github.com/fluttercommunity/plus_plugins | 7.3.2 | BSD-3-Clause | Oui | Notice | — | Faible | APPROUVÉ |
 | workmanager | github.com/fluttercommunity/flutter_workmanager | 0.10.10 | MIT | Oui | Notice | WorkManager AndroidX (Apache-2.0) | Version < 1.0 ; comportement iOS limité par le système | APPROUVÉ |
 | intl | github.com/dart-lang/i18n | 0.20.3 | BSD-3-Clause | Oui | Notice | — | Faible | APPROUVÉ |
-| path, crypto (crypto : tests uniquement, calcul TOTP du test de bout en bout) | github.com/dart-lang/core | 1.9.1 / 3.0.8 | BSD-3-Clause | Oui | Notice | — | Faible | APPROUVÉ |
+| path, crypto (crypto : empreinte SHA-256 du métré validé, et calcul TOTP du test de bout en bout) | github.com/dart-lang/core | 1.9.1 / 3.0.8 | BSD-3-Clause | Oui | Notice | — | Faible | APPROUVÉ |
 | json_annotation | github.com/google/json_serializable.dart | 4.12.0 | BSD-3-Clause | Oui | Notice | — | Faible | APPROUVÉ |
 | freezed (dév.) | github.com/rrousselGit/freezed | 4.0.3 | MIT | Oui | — | — | Nul | APPROUVÉ |
 | build_runner (dév.) | github.com/dart-lang/build | 2.17.1 | BSD-3-Clause | Oui | — | — | Nul | APPROUVÉ |
 | mocktail (tests) | github.com/felangel/mocktail | 1.0.5 | MIT | Oui | — | — | Nul | APPROUVÉ |
 | flutter_lints (dév.) | github.com/flutter/packages | 6.0.0 | BSD-3-Clause | Oui | — | — | Nul | APPROUVÉ |
 | model_viewer_plus | github.com/omchiii/model_viewer_plus.dart | 1.10.0 | Apache-2.0 | Oui | Notice | `<model-viewer>` de Google (Apache-2.0, vérifié), three.js (MIT), WebView système | Rendu dans une WebView : performance à mesurer | APPROUVÉ (Phase 3) |
+| file_picker (import de fichiers) | github.com/miguelpruivo/flutter_file_picker | 13.3.1 | **non affichée par pub.dev au 01/11/2026** | — | — | — | Licence non vérifiable : remplacé par le copier-coller du CSV | À EXAMINER (non intégré) |
 | opencv_dart | github.com/rainyl/opencv_dart | 2.2.2 | Apache-2.0 | Oui | Notice | OpenCV natif (Apache-2.0) ; éventuels modules tiers à vérifier | Poids de l'app (plusieurs dizaines de Mo) | À EXAMINER (Phase 2, besoin non démontré) |
 | Plugin ARKit / ARCore pour Flutter | à choisir | — | — | — | — | ARKit (Apple, propriétaire), Google Play Services for AR (propriétaire) | Composants propriétaires, voir D-03 | À EXAMINER |
 | SQLCipher (chiffrement base locale) | github.com/sqlcipher/sqlcipher | — | BSD-3-Clause (édition communautaire, à re-vérifier) | Oui | Notice | OpenSSL / CommonCrypto | Intégration native | À EXAMINER |

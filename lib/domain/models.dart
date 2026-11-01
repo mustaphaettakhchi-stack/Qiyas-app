@@ -4,7 +4,77 @@
 
 enum QuoteStatus { draft, sent, accepted, refused }
 
-enum QuantityBase { floor, ceiling, walls, skirting, free }
+/// Base de quantité d'un ouvrage ou d'une ligne de devis.
+/// [walls] = murs nets d'ouvertures ; [count] = élément compté pièce par pièce ([QuoteLine.countKey]) ;
+/// [free] = quantité saisie.
+enum QuantityBase { floor, ceiling, walls, wallsGross, skirting, perimeter, volume, doors, windows, count, free }
+
+/// Codes partagés avec le serveur (backend/app/models.py, QUANTITY_BASES).
+const Map<QuantityBase, String> kBaseCodes = {
+  QuantityBase.floor: 'floor',
+  QuantityBase.ceiling: 'ceiling',
+  QuantityBase.walls: 'walls_net',
+  QuantityBase.wallsGross: 'walls_gross',
+  QuantityBase.skirting: 'skirting',
+  QuantityBase.perimeter: 'perimeter',
+  QuantityBase.volume: 'volume',
+  QuantityBase.doors: 'doors',
+  QuantityBase.windows: 'windows',
+  QuantityBase.count: 'count',
+  QuantityBase.free: 'manual',
+};
+
+QuantityBase baseFromCode(Object? code) =>
+    kBaseCodes.entries.firstWhere((e) => e.value == code, orElse: () => const MapEntry(QuantityBase.free, 'manual')).key;
+
+/// Unités explicites (codes serveur → libellés).
+const Map<String, String> kUnitLabels = {
+  'm': 'm',
+  'm2': 'm²',
+  'm3': 'm³',
+  'kg': 'kg',
+  'l': 'l',
+  'u': 'u',
+  'forfait': 'forfait',
+};
+
+/// Libellé d'unité → code (reprise des données Qiyas : « m² », « ml »…).
+String unitCode(String unit) => switch (unit.trim()) {
+      'm²' || 'm2' => 'm2',
+      'ml' || 'm' => 'm',
+      'm³' || 'm3' => 'm3',
+      'kg' => 'kg',
+      'l' || 'litre' => 'l',
+      'forfait' || 'ff' => 'forfait',
+      _ => 'u',
+    };
+
+/// Catégories (lots) de la bibliothèque et du métré.
+const Map<String, String> kCategories = {
+  'floor': 'Sols',
+  'wall': 'Murs',
+  'ceiling': 'Plafonds',
+  'joinery': 'Menuiseries',
+  'electricity': 'Électricité',
+  'plumbing': 'Plomberie',
+  'masonry': 'Maçonnerie',
+  'other': 'Autre',
+};
+
+/// Éléments comptés dans chaque pièce : (catégorie, libellé, unité).
+const Map<String, (String, String, String)> kCountItems = {
+  'prises': ('electricity', 'Prises', 'u'),
+  'interrupteurs': ('electricity', 'Interrupteurs', 'u'),
+  'points_lumineux': ('electricity', 'Points lumineux', 'u'),
+  'points_eau': ('plumbing', 'Points d\'eau', 'u'),
+  'evacuations': ('plumbing', 'Évacuations', 'u'),
+  'sanitaires': ('plumbing', 'Appareils sanitaires', 'u'),
+  'placards': ('joinery', 'Placards', 'u'),
+  'cloisons_m2': ('masonry', 'Cloisons à créer', 'm2'),
+  'demolition_m2': ('masonry', 'Démolitions', 'm2'),
+  'reprises_m2': ('masonry', 'Reprises de maçonnerie', 'm2'),
+  'ouvertures_a_creer': ('masonry', 'Ouvertures à créer', 'u'),
+};
 
 enum OpeningType { door, window }
 
@@ -87,44 +157,234 @@ class Company {
       );
 }
 
-class Prestation {
-  Prestation({
+int? _iOrNull(Object? v) => v is num ? v.toInt() : null;
+
+/// Ouvrage de la bibliothèque (table work_items). Un prix null = « prix à renseigner ».
+class WorkItem with Syncable {
+  WorkItem({
     required this.id,
     required this.name,
+    this.code = '',
+    this.category = 'other',
     this.description = '',
-    this.unit = 'm²',
-    this.base = QuantityBase.floor,
-    this.unitPriceCents = 0,
+    this.unit = 'u',
+    this.base = QuantityBase.free,
+    this.countKey,
+    this.wasteRateBp = 0,
+    this.labourCostCents,
+    this.salePriceCents,
+    this.currency = 'MAD',
+    List<Map<String, dynamic>>? components,
     this.active = true,
+    this.priceNote = '',
+  }) : components = components ?? [];
+
+  final String id;
+  String code;
+  String category;
+  String name;
+  String description;
+
+  /// Code d'unité (voir [kUnitLabels]).
+  String unit;
+  QuantityBase base;
+  String? countKey;
+
+  /// Taux de perte en points de base (1000 = 10 %). 0 par défaut, jamais implicite.
+  int wasteRateBp;
+  int? labourCostCents;
+  int? salePriceCents;
+  String currency;
+  List<Map<String, dynamic>> components;
+  bool active;
+
+  /// Source du dernier prix (devis fournisseur…), enregistrée dans l'historique des prix.
+  String priceNote;
+
+  String get unitLabel => kUnitLabels[unit] ?? unit;
+
+  Map<String, dynamic> toServer() => {
+        'code': code.trim(),
+        'category': category,
+        'name': name.trim(),
+        'description': description.trim(),
+        'unit': unit,
+        'quantity_basis': kBaseCodes[base],
+        'count_key': base == QuantityBase.count ? countKey : null,
+        'waste_rate_bp': wasteRateBp,
+        'labour_cost_cents': labourCostCents,
+        'sale_price_cents': salePriceCents,
+        'currency': currency,
+        'components': components,
+        'is_active': active,
+        'price_note': priceNote.trim(),
+      };
+
+  void applyServer(Map<String, dynamic> d) {
+    code = _s(d['code']);
+    category = _s(d['category'], 'other');
+    name = _s(d['name']);
+    description = _s(d['description']);
+    unit = _s(d['unit'], 'u');
+    base = baseFromCode(d['quantity_basis']);
+    countKey = d['count_key'] as String?;
+    wasteRateBp = _i(d['waste_rate_bp']);
+    labourCostCents = _iOrNull(d['labour_cost_cents']);
+    salePriceCents = _iOrNull(d['sale_price_cents']);
+    currency = _s(d['currency'], 'MAD');
+    components = [for (final c in d['components'] as List? ?? const []) Map<String, dynamic>.from(c as Map)];
+    active = d['is_active'] != false;
+    priceNote = _s(d['price_note']);
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, ...toServer(), ...syncJson()};
+
+  factory WorkItem.fromJson(Map<String, dynamic> j) => WorkItem(id: _s(j['id']), name: '')
+    ..applyServer(j)
+    ..readSync(j);
+
+  /// Reprise d'une « prestation » Qiyas (prix 0 = non renseigné).
+  factory WorkItem.fromLegacy(Map<String, dynamic> j) {
+    final legacyBase = _s(j['base']);
+    final pu = _i(j['pu']);
+    return WorkItem(
+      id: _s(j['id']),
+      name: _s(j['name']),
+      description: _s(j['desc']),
+      unit: unitCode(_s(j['unit'], 'u')),
+      base: _enumByName(QuantityBase.values, legacyBase, QuantityBase.free),
+      salePriceCents: pu > 0 ? pu : null,
+      active: j['active'] != false,
+      priceNote: pu > 0 ? 'Prix repris de Qiyas' : '',
+    );
+  }
+}
+
+/// Matériau ou fourniture (table materials). Le prix d'achat n'est connu que des administrateurs.
+class MaterialItem with Syncable {
+  MaterialItem({
+    required this.id,
+    required this.name,
+    this.supplierId,
+    this.category = 'other',
+    this.brand = '',
+    this.reference = '',
+    this.unit = 'u',
+    this.packSize,
+    this.wasteRateBp = 0,
+    this.purchasePriceCents,
+    this.salePriceCents,
+    this.currency = 'MAD',
+    this.city = '',
+    this.priceNote = '',
+  });
+
+  final String id;
+  String? supplierId;
+  String category;
+  String name;
+  String brand;
+  String reference;
+  String unit;
+  double? packSize;
+  int wasteRateBp;
+  int? purchasePriceCents;
+  int? salePriceCents;
+  String currency;
+  String city;
+  String priceNote;
+
+  String get unitLabel => kUnitLabels[unit] ?? unit;
+
+  Map<String, dynamic> toServer() => {
+        'supplier_id': supplierId,
+        'category': category,
+        'name': name.trim(),
+        'brand': brand.trim(),
+        'reference': reference.trim(),
+        'unit': unit,
+        'pack_size': packSize,
+        'waste_rate_bp': wasteRateBp,
+        'purchase_price_cents': purchasePriceCents,
+        'sale_price_cents': salePriceCents,
+        'currency': currency,
+        'city': city.trim(),
+        'price_note': priceNote.trim(),
+      };
+
+  void applyServer(Map<String, dynamic> d) {
+    supplierId = d['supplier_id'] as String?;
+    category = _s(d['category'], 'other');
+    name = _s(d['name']);
+    brand = _s(d['brand']);
+    reference = _s(d['reference']);
+    unit = _s(d['unit'], 'u');
+    packSize = (d['pack_size'] as num?)?.toDouble();
+    wasteRateBp = _i(d['waste_rate_bp']);
+    purchasePriceCents = _iOrNull(d['purchase_price_cents']);
+    salePriceCents = _iOrNull(d['sale_price_cents']);
+    currency = _s(d['currency'], 'MAD');
+    city = _s(d['city']);
+    priceNote = _s(d['price_note']);
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, ...toServer(), ...syncJson()};
+
+  factory MaterialItem.fromJson(Map<String, dynamic> j) => MaterialItem(id: _s(j['id']), name: '')
+    ..applyServer(j)
+    ..readSync(j);
+}
+
+class Supplier with Syncable {
+  Supplier({
+    required this.id,
+    required this.name,
+    this.contactName = '',
+    this.phone = '',
+    this.email = '',
+    this.address = '',
+    this.city = '',
+    this.ice = '',
+    this.notes = '',
   });
 
   final String id;
   String name;
-  String description;
-  String unit;
-  QuantityBase base;
-  int unitPriceCents;
-  bool active;
+  String contactName;
+  String phone;
+  String email;
+  String address;
+  String city;
+  String ice;
+  String notes;
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'desc': description,
-        'unit': unit,
-        'base': base.name,
-        'pu': unitPriceCents,
-        'active': active,
+  Map<String, dynamic> toServer() => {
+        'name': name.trim(),
+        'contact_name': contactName.trim(),
+        'phone': phone.trim(),
+        'email': email.trim(),
+        'address': address.trim(),
+        'city': city.trim(),
+        'ice': ice.trim(),
+        'notes': notes.trim(),
       };
 
-  factory Prestation.fromJson(Map<String, dynamic> j) => Prestation(
-        id: _s(j['id']),
-        name: _s(j['name']),
-        description: _s(j['desc']),
-        unit: _s(j['unit'], 'm²'),
-        base: _enumByName(QuantityBase.values, j['base'], QuantityBase.free),
-        unitPriceCents: _i(j['pu']),
-        active: j['active'] != false,
-      );
+  void applyServer(Map<String, dynamic> d) {
+    name = _s(d['name']);
+    contactName = _s(d['contact_name']);
+    phone = _s(d['phone']);
+    email = _s(d['email']);
+    address = _s(d['address']);
+    city = _s(d['city']);
+    ice = _s(d['ice']);
+    notes = _s(d['notes']);
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, ...toServer(), ...syncJson()};
+
+  factory Supplier.fromJson(Map<String, dynamic> j) => Supplier(id: _s(j['id']), name: '')
+    ..applyServer(j)
+    ..readSync(j);
 }
 
 /// Origine d'une cote (docs/ARCHITECTURE.md §5).
@@ -229,12 +489,14 @@ class Room with Syncable {
     List<Wall>? walls,
     List<Opening>? openings,
     List<String>? photoPaths,
+    Map<String, double>? counts,
     this.level = 'RDC',
     this.planX,
     this.planY,
   })  : walls = walls ?? [],
         openings = openings ?? [],
-        photoPaths = photoPaths ?? [];
+        photoPaths = photoPaths ?? [],
+        counts = counts ?? {};
 
   /// Pièce rectangulaire : 4 murs (longueur, largeur, longueur, largeur) à angle droit.
   /// Les ouvertures sans mur désigné sont réparties sur les murs dans l'ordre.
@@ -271,6 +533,9 @@ class Room with Syncable {
   List<Wall> walls;
   List<Opening> openings;
   List<String> photoPaths;
+
+  /// Éléments comptés dans la pièce (clés de [kCountItems]) : prises, points d'eau…
+  Map<String, double> counts;
   double? planX;
   double? planY;
 
@@ -303,9 +568,14 @@ class Room with Syncable {
         'openings': [for (final o in openings) o.toJson()],
         'plan_x': planX,
         'plan_y': planY,
+        'counts': {for (final e in counts.entries) if (e.value > 0) e.key: e.value},
       };
 
   void applyServer(Map<String, dynamic> d) {
+    counts = {
+      for (final e in (d['counts'] as Map? ?? const {}).entries)
+        if (kCountItems.containsKey(e.key) && e.value is num) e.key as String: (e.value as num).toDouble(),
+    };
     name = _s(d['name']);
     level = _s(d['level_name'], 'RDC');
     height = _d(d['height_m'], 2.8);
@@ -367,7 +637,10 @@ class RoomTombstone {
 class QuoteLine {
   QuoteLine({
     required this.id,
-    this.prestationId,
+    this.workItemId,
+    this.countKey,
+    this.wasteRateBp = 0,
+    this.priceMissing = false,
     required this.label,
     this.description = '',
     this.unit = 'm²',
@@ -379,7 +652,18 @@ class QuoteLine {
   });
 
   final String id;
-  String? prestationId;
+
+  /// Ouvrage de la bibliothèque d'origine (null pour une ligne libre).
+  String? workItemId;
+
+  /// Élément compté quand [base] vaut [QuantityBase.count].
+  String? countKey;
+
+  /// Taux de perte appliqué à la quantité issue du métré (points de base), affiché sur la ligne.
+  int wasteRateBp;
+
+  /// Vrai tant qu'aucun prix n'a été saisi : la ligne bloque l'envoi du devis.
+  bool priceMissing;
   String label;
   String description;
   String unit;
@@ -397,7 +681,10 @@ class QuoteLine {
 
   QuoteLine copyWith({required String id}) => QuoteLine(
         id: id,
-        prestationId: prestationId,
+        workItemId: workItemId,
+        countKey: countKey,
+        wasteRateBp: wasteRateBp,
+        priceMissing: priceMissing,
         label: label,
         description: description,
         unit: unit,
@@ -409,7 +696,10 @@ class QuoteLine {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'presId': prestationId,
+        'presId': workItemId,
+        'count': countKey,
+        'waste': wasteRateBp,
+        'noPrice': priceMissing,
         'label': label,
         'desc': description,
         'unit': unit,
@@ -422,7 +712,10 @@ class QuoteLine {
 
   factory QuoteLine.fromJson(Map<String, dynamic> j) => QuoteLine(
         id: _s(j['id']),
-        prestationId: j['presId'] as String?,
+        workItemId: j['presId'] as String?,
+        countKey: j['count'] as String?,
+        wasteRateBp: _i(j['waste']),
+        priceMissing: j['noPrice'] == true,
         label: _s(j['label']),
         description: _s(j['desc']),
         unit: _s(j['unit'], 'm²'),
@@ -620,6 +913,10 @@ class Project with Syncable {
   DateTime? visitDate;
   String? managerId;
 
+  /// Validation du métré : {validated_at, validated_by, validated_by_name, fingerprint, rooms,
+  /// unverified_accepted}. Null tant que le métré n'est pas validé.
+  Map<String, dynamic>? metreValidation;
+
   /// Adresse et ville du chantier.
   String address;
   String city;
@@ -658,9 +955,11 @@ class Project with Syncable {
         'site_address': address.trim(),
         'site_city': city.trim(),
         'notes': notes.trim(),
+        'metre_validation': metreValidation,
       };
 
   void applyServer(Map<String, dynamic> d) {
+    metreValidation = d['metre_validation'] == null ? null : Map<String, dynamic>.from(d['metre_validation'] as Map);
     clientId = d['client_id'] as String?;
     name = _s(d['name']);
     projectType = _s(d['project_type'], 'renovation');
@@ -739,8 +1038,10 @@ class SyncConflict {
 class AppData {
   AppData({
     required this.company,
-    required this.prestations,
     required this.projects,
+    List<WorkItem>? workItems,
+    List<MaterialItem>? materials,
+    List<Supplier>? suppliers,
     List<Client>? clients,
     List<SyncConflict>? conflicts,
     List<RoomTombstone>? roomTombstones,
@@ -749,13 +1050,18 @@ class AppData {
     this.syncCursor = 0,
     this.syncAccount,
     this.lastSyncAt,
-  })  : clients = clients ?? [],
+  })  : workItems = workItems ?? [],
+        materials = materials ?? [],
+        suppliers = suppliers ?? [],
+        clients = clients ?? [],
         conflicts = conflicts ?? [],
         roomTombstones = roomTombstones ?? [],
         pendingRooms = pendingRooms ?? [];
 
   Company company;
-  List<Prestation> prestations;
+  List<WorkItem> workItems;
+  List<MaterialItem> materials;
+  List<Supplier> suppliers;
   List<Project> projects;
   List<Client> clients;
   List<SyncConflict> conflicts;
@@ -773,9 +1079,11 @@ class AppData {
   DateTime? lastSyncAt;
 
   Map<String, dynamic> toJson() => {
-        'schema': 3,
+        'schema': 4,
         'company': company.toJson(),
-        'prestations': prestations.map((p) => p.toJson()).toList(),
+        'work_items': workItems.map((p) => p.toJson()).toList(),
+        'materials': materials.map((p) => p.toJson()).toList(),
+        'suppliers': suppliers.map((p) => p.toJson()).toList(),
         'projects': projects.map((p) => p.toJson()).toList(),
         'clients': clients.map((c) => c.toJson()).toList(),
         'conflicts': conflicts.map((c) => c.toJson()).toList(),
@@ -789,9 +1097,12 @@ class AppData {
 
   factory AppData.fromJson(Map<String, dynamic> j) => AppData(
         company: Company.fromJson(Map<String, dynamic>.from(j['company'] as Map? ?? {})),
-        prestations: (j['prestations'] as List? ?? [])
-            .map((e) => Prestation.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
+        // Les « prestations » Qiyas deviennent des ouvrages de la bibliothèque.
+        workItems: j.containsKey('work_items')
+            ? (j['work_items'] as List).map((e) => WorkItem.fromJson(Map<String, dynamic>.from(e as Map))).toList()
+            : (j['prestations'] as List? ?? []).map((e) => WorkItem.fromLegacy(Map<String, dynamic>.from(e as Map))).toList(),
+        materials: (j['materials'] as List? ?? []).map((e) => MaterialItem.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+        suppliers: (j['suppliers'] as List? ?? []).map((e) => Supplier.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
         projects: (j['projects'] as List? ?? [])
             .map((e) => Project.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),

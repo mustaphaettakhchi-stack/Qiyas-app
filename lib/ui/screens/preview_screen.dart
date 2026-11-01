@@ -32,7 +32,13 @@ class PreviewScreen extends StatelessWidget {
     final phone = client?.phone ?? '';
     final message = quoteMessage(c, p, q, client: client);
 
+    final missingPrices = q.lines.where((l) => l.priceMissing).length;
+
     Future<void> sendPdf() async {
+      if (missingPrices > 0) {
+        showToast(context, '$missingPrices ligne(s) sans prix : renseignez-les avant d\'envoyer le devis.');
+        return;
+      }
       final bytes = await PdfService.build(company: c, project: p, quote: q, client: client);
       final shared = await ShareService.sharePdf(bytes, '${q.number}.pdf', message);
       if (shared && q.status == QuoteStatus.draft) {

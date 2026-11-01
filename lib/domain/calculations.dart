@@ -16,6 +16,11 @@ class Measures {
     required this.walls,
     required this.skirting,
     required this.volume,
+    this.wallsGross = 0,
+    this.openingsArea = 0,
+    this.doors = 0,
+    this.windows = 0,
+    this.counts = const {},
   });
 
   static const zero = Measures(perimeter: 0, floor: 0, ceiling: 0, walls: 0, skirting: 0, volume: 0);
@@ -23,32 +28,47 @@ class Measures {
   final double perimeter;
   final double floor;
   final double ceiling;
+
+  /// Murs nets d'ouvertures.
   final double walls;
+  final double wallsGross;
+  final double openingsArea;
   final double skirting;
   final double volume;
+  final double doors;
+  final double windows;
 
-  double of(QuantityBase base) {
-    switch (base) {
-      case QuantityBase.floor:
-        return floor;
-      case QuantityBase.ceiling:
-        return ceiling;
-      case QuantityBase.walls:
-        return walls;
-      case QuantityBase.skirting:
-        return skirting;
-      case QuantityBase.free:
-        return 0;
-    }
-  }
+  /// Éléments comptés (clés de [kCountItems]).
+  final Map<String, double> counts;
+
+  double of(QuantityBase base, [String? countKey]) => switch (base) {
+        QuantityBase.floor => floor,
+        QuantityBase.ceiling => ceiling,
+        QuantityBase.walls => walls,
+        QuantityBase.wallsGross => wallsGross,
+        QuantityBase.skirting => skirting,
+        QuantityBase.perimeter => perimeter,
+        QuantityBase.volume => volume,
+        QuantityBase.doors => doors,
+        QuantityBase.windows => windows,
+        QuantityBase.count => counts[countKey] ?? 0,
+        QuantityBase.free => 0,
+      };
 
   Measures operator +(Measures o) => Measures(
         perimeter: perimeter + o.perimeter,
         floor: floor + o.floor,
         ceiling: ceiling + o.ceiling,
         walls: walls + o.walls,
+        wallsGross: wallsGross + o.wallsGross,
+        openingsArea: openingsArea + o.openingsArea,
         skirting: skirting + o.skirting,
         volume: volume + o.volume,
+        doors: doors + o.doors,
+        windows: windows + o.windows,
+        counts: {
+          for (final k in {...counts.keys, ...o.counts.keys}) k: (counts[k] ?? 0) + (o.counts[k] ?? 0),
+        },
       );
 
   Measures rounded() => Measures(
@@ -56,8 +76,13 @@ class Measures {
         floor: round2(floor),
         ceiling: round2(ceiling),
         walls: round2(walls),
+        wallsGross: round2(wallsGross),
+        openingsArea: round2(openingsArea),
         skirting: round2(skirting),
         volume: round2(volume),
+        doors: doors,
+        windows: windows,
+        counts: {for (final e in counts.entries) e.key: round2(e.value)},
       );
 }
 
@@ -77,13 +102,19 @@ Measures roomMeasures(Room r) {
   final doorsWidth = r.openings
       .where((o) => o.type == OpeningType.door)
       .fold<double>(0, (s, o) => s + o.width);
+  final openingsArea = r.openings.fold<double>(0, (s, o) => s + o.area);
   return Measures(
     perimeter: perimeter,
     floor: shape.area,
     ceiling: shape.area,
     walls: walls,
+    wallsGross: perimeter * r.height,
+    openingsArea: openingsArea,
     skirting: math.max(0.0, perimeter - doorsWidth),
     volume: shape.area * r.height,
+    doors: r.doorCount.toDouble(),
+    windows: r.windowCount.toDouble(),
+    counts: Map.of(r.counts),
   );
 }
 
@@ -91,11 +122,21 @@ Measures roomMeasures(Room r) {
 Measures projectMeasures(Project p) =>
     p.rooms.fold<Measures>(Measures.zero, (s, r) => s + roomMeasures(r)).rounded();
 
-/// Quantité effective d'une ligne de devis.
+/// Quantité nette d'une ligne issue du métré (avant perte), ou null si saisie à la main.
+double? lineNetQuantity(Project p, QuoteLine l, {Measures? measures}) {
+  if (l.manual || l.base == QuantityBase.free) return null;
+  return (measures ?? projectMeasures(p)).of(l.base, l.countKey);
+}
+
+/// Quantité effective d'une ligne de devis :
+/// figée si le devis est envoyé ; saisie si la ligne est manuelle ;
+/// sinon quantité nette du métré × (1 + taux de perte), arrondie au centième.
 double lineQuantity(Project p, QuoteLine l, {Measures? measures}) {
   if (l.frozenQuantity != null) return l.frozenQuantity!;
-  if (l.manual || l.base == QuantityBase.free) return l.quantity;
-  return (measures ?? projectMeasures(p)).of(l.base);
+  final net = lineNetQuantity(p, l, measures: measures);
+  if (net == null) return l.quantity;
+  if (l.wasteRateBp == 0) return net;
+  return round2(net * (1 + l.wasteRateBp / 10000));
 }
 
 /// Total HT d'une ligne, en centimes. Les calculs se font en entiers.

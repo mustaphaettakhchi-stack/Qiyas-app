@@ -10,14 +10,20 @@ const Map<QuoteStatus, String> kStatusLabel = {
 };
 
 const Map<QuantityBase, String> kBaseLabel = {
-  QuantityBase.floor: 'Sol (m²)',
-  QuantityBase.ceiling: 'Plafond (m²)',
-  QuantityBase.walls: 'Murs nets (m²)',
-  QuantityBase.skirting: 'Plinthes (ml)',
-  QuantityBase.free: 'Saisie libre',
+  QuantityBase.floor: 'Surface de sol (m²)',
+  QuantityBase.ceiling: 'Surface de plafond (m²)',
+  QuantityBase.walls: 'Murs nets d\'ouvertures (m²)',
+  QuantityBase.wallsGross: 'Murs bruts (m²)',
+  QuantityBase.skirting: 'Plinthes (m)',
+  QuantityBase.perimeter: 'Périmètre (m)',
+  QuantityBase.volume: 'Volume (m³)',
+  QuantityBase.doors: 'Nombre de portes',
+  QuantityBase.windows: 'Nombre de fenêtres',
+  QuantityBase.count: 'Élément compté dans les pièces',
+  QuantityBase.free: 'Quantité saisie',
 };
 
-const List<String> kUnits = ['m²', 'ml', 'u', 'forfait'];
+const List<String> kUnits = ['m²', 'm', 'm³', 'kg', 'l', 'u', 'forfait'];
 
 /// Message envoyé au client avec le devis (WhatsApp, e-mail).
 String quoteMessage(Company c, Project p, Quote q, {Client? client}) {

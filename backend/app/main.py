@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
-from .routes import auth, sync, users
+from .routes import auth, library, sync, users
 
 API_PREFIX = "/api/v1"
 
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
     app.include_router(sync.router, prefix=API_PREFIX)
+    app.include_router(library.router, prefix=API_PREFIX)
     return app
 
 

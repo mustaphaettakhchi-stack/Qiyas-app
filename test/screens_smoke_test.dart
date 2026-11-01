@@ -11,6 +11,8 @@ import 'package:lamaalam/session/session_store.dart';
 import 'package:lamaalam/sync/sync_engine.dart';
 import 'package:lamaalam/ui/home_shell.dart';
 import 'package:lamaalam/ui/screens/clients_screen.dart';
+import 'package:lamaalam/ui/screens/library_screen.dart';
+import 'package:lamaalam/ui/screens/metre_screen.dart';
 import 'package:lamaalam/ui/screens/plan_screen.dart';
 import 'package:lamaalam/ui/screens/project_screen.dart';
 import 'package:lamaalam/ui/screens/room_screen.dart';
@@ -153,5 +155,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Plan'), findsOneWidget);
     expect(l.planX, isNotNull);
+  });
+
+  testWidgets('Bibliothèque vide puis fiche ouvrage en consultation seule', (tester) async {
+    final (state, wrap) = await _setup();
+    await tester.pumpWidget(wrap(const LibraryScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('Aucun élément.'), findsOneWidget); // production : démarre vide
+    expect(find.textContaining('consultation seule'), findsOneWidget); // non administrateur
+    state.addTemplate('Électricité simple');
+    await tester.pumpAndSettle();
+    expect(find.text('Prix à renseigner'), findsWidgets);
+    final w = state.workItems.first;
+    await tester.pumpWidget(wrap(WorkItemScreen(id: w.id)));
+    await tester.pumpAndSettle();
+    expect(find.text('Taux de perte'), findsOneWidget);
+    expect(tester.widget<TextField>(find.widgetWithText(TextField, 'Désignation')).enabled, isFalse);
+  });
+
+  testWidgets('Métré par lot avec comptages et bouton de validation', (tester) async {
+    final (state, wrap) = await _setup();
+    final p = state.createProject();
+    final r = state.addRoom(p);
+    state.mutate(() {
+      for (final (i, l) in [5.0, 4.0, 5.0, 4.0].indexed) {
+        r.walls[i]
+          ..length = l
+          ..lengthSource = MeasureSource.manual;
+      }
+      r.counts['prises'] = 6;
+    }, touch: p, room: r);
+    await tester.pumpWidget(wrap(MetreScreen(projectId: p.id)));
+    await tester.pumpAndSettle();
+    expect(find.text('Métré non validé.'), findsOneWidget);
+    expect(find.textContaining('Valider le métré'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Prises'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Prises'), findsOneWidget);
   });
 }

@@ -106,8 +106,20 @@ class SyncEngine extends ChangeNotifier {
   bool _inConflict(String entity, String id) => _data.conflicts.any((c) => c.entity == entity && c.id == id);
 
   Future<void> _push() async {
-    // Les clients d'abord : un projet peut faire référence à un client créé hors ligne.
+    // Bibliothèque d'abord (administrateur seulement), puis clients, projets et pièces :
+    // chaque fiche est envoyée après celles auxquelles elle fait référence.
+    final admin = session.user?.isAdmin ?? false;
+    Map<String, dynamic> lib(String entity, Syncable x) =>
+        {'entity': entity, 'id': (x as dynamic).id, 'base_version': x.serverVersion, 'deleted': x.deleted, 'data': _serverData(x)};
     final changes = <Map<String, dynamic>>[
+      if (admin) ...[
+        for (final x in _data.suppliers)
+          if (x.dirty && x.syncError == null && !_inConflict('suppliers', x.id)) lib('suppliers', x),
+        for (final x in _data.materials)
+          if (x.dirty && x.syncError == null && !_inConflict('materials', x.id)) lib('materials', x),
+        for (final x in _data.workItems)
+          if (x.dirty && x.syncError == null && !_inConflict('work_items', x.id)) lib('work_items', x),
+      ],
       for (final c in _data.clients)
         if (c.dirty && c.syncError == null && !_inConflict('clients', c.id))
           {'entity': 'clients', 'id': c.id, 'base_version': c.serverVersion, 'deleted': c.deleted, 'data': c.toServer()},
@@ -268,6 +280,12 @@ class SyncEngine extends ChangeNotifier {
   void _insertFromServer(String entity, Map<String, dynamic> record) {
     final id = record['id'] as String;
     switch (entity) {
+      case 'suppliers':
+        _data.suppliers.add(Supplier(id: id, name: ''));
+      case 'materials':
+        _data.materials.add(MaterialItem(id: id, name: ''));
+      case 'work_items':
+        _data.workItems.add(WorkItem(id: id, name: ''));
       case 'clients':
         _data.clients.add(Client(id: id));
       case 'projects':
@@ -300,6 +318,9 @@ class SyncEngine extends ChangeNotifier {
     final data = Map<String, dynamic>.from(record['data'] as Map);
     if (local is Client) local.applyServer(data);
     if (local is Room) local.applyServer(data);
+    if (local is WorkItem) local.applyServer(data);
+    if (local is MaterialItem) local.applyServer(data);
+    if (local is Supplier) local.applyServer(data);
     if (local is Project) {
       local
         ..applyServer(data)
@@ -368,6 +389,12 @@ class SyncEngine extends ChangeNotifier {
 
   Syncable? _find(String entity, String id) {
     switch (entity) {
+      case 'suppliers':
+        return _data.suppliers.where((x) => x.id == id).firstOrNull;
+      case 'materials':
+        return _data.materials.where((x) => x.id == id).firstOrNull;
+      case 'work_items':
+        return _data.workItems.where((x) => x.id == id).firstOrNull;
       case 'clients':
         return _data.clients.where((c) => c.id == id).firstOrNull;
       case 'projects':
@@ -386,6 +413,12 @@ class SyncEngine extends ChangeNotifier {
 
   void _remove(String entity, String id) {
     switch (entity) {
+      case 'suppliers':
+        _data.suppliers.removeWhere((x) => x.id == id);
+      case 'materials':
+        _data.materials.removeWhere((x) => x.id == id);
+      case 'work_items':
+        _data.workItems.removeWhere((x) => x.id == id);
       case 'clients':
         _data.clients.removeWhere((c) => c.id == id);
       case 'projects':
@@ -399,6 +432,9 @@ class SyncEngine extends ChangeNotifier {
         Client() => x.toServer(),
         Project() => x.toServer(),
         Room() => x.toServer(_projectOfRoom(x.id)?.id ?? ''),
+        WorkItem() => x.toServer(),
+        MaterialItem() => x.toServer(),
+        Supplier() => x.toServer(),
         _ => const {},
       };
 
@@ -410,6 +446,9 @@ class SyncEngine extends ChangeNotifier {
       Client() => (Client(id: local.id)..applyServer(data)).toServer(),
       Project() => (Project(id: local.id)..applyServer(data)).toServer(),
       Room() => (Room(id: local.id, name: '', height: 2.8)..applyServer(data)).toServer(_projectOfRoom(local.id)?.id ?? ''),
+      WorkItem() => (WorkItem(id: local.id, name: '')..applyServer(data)).toServer(),
+      MaterialItem() => (MaterialItem(id: local.id, name: '')..applyServer(data)).toServer(),
+      Supplier() => (Supplier(id: local.id, name: '')..applyServer(data)).toServer(),
       _ => const <String, dynamic>{},
     };
     return jsonEncode(normalized) == jsonEncode(_serverData(local));

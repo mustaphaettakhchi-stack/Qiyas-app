@@ -119,6 +119,31 @@ class _RoomScreenState extends State<RoomScreen> {
         ),
         if (r.openings.isEmpty) Text('Aucune ouverture.', style: t.bodySmall),
         for (final o in r.openings) _OpeningRow(key: ValueKey('o-${o.id}'), room: r, opening: o, edit: edit),
+        const SectionHeader('Éléments à compter'),
+        Text('Électricité, plomberie, maçonnerie : quantités reprises dans le métré et les devis.', style: t.bodySmall),
+        for (final cat in ['electricity', 'plumbing', 'joinery', 'masonry']) ...[
+          Padding(padding: const EdgeInsets.only(top: 8), child: Text(kCategories[cat]!, style: t.labelLarge)),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            for (final e in kCountItems.entries.where((e) => e.value.$1 == cat))
+              SizedBox(
+                width: 160,
+                child: NumField(
+                  key: ValueKey('cnt-${r.id}-${e.key}'),
+                  label: e.value.$2,
+                  suffix: kUnitLabels[e.value.$3],
+                  decimals: e.value.$3 == 'u' ? 0 : 2,
+                  value: r.counts[e.key] ?? 0,
+                  onChanged: (v) => edit(() {
+                    if (v <= 0) {
+                      r.counts.remove(e.key);
+                    } else {
+                      r.counts[e.key] = v;
+                    }
+                  }),
+                ),
+              ),
+          ]),
+        ],
         SectionHeader(
           'Photos de la pièce',
           trailing: TextButton.icon(

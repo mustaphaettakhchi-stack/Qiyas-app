@@ -21,18 +21,21 @@ void main() {
     final state = AppState(store: _MemoryStore());
     await state.init();
     expect(state.data.projects, isEmpty);
-    expect(state.data.prestations, isEmpty);
+    expect(state.data.workItems, isEmpty);
     expect(state.data.company.name, isEmpty);
   });
 
-  test('Les grilles modèles ajoutent des prestations à prix nul', () async {
+  test('Les modèles ajoutent des ouvrages sans prix ni taux de perte', () async {
     final state = AppState(store: _MemoryStore());
     await state.init();
     for (final trade in kPriceTemplates.keys) {
       state.addTemplate(trade);
     }
-    expect(state.data.prestations, isNotEmpty);
-    expect(state.data.prestations.every((p) => p.unitPriceCents == 0), isTrue);
+    expect(state.data.workItems, isNotEmpty);
+    expect(state.data.workItems.every((w) => w.salePriceCents == null && w.wasteRateBp == 0), isTrue);
+    // Une ligne de devis créée depuis un ouvrage sans prix est signalée et bloque l'envoi.
+    final line = lineFrom(state.data.workItems.first, 'l');
+    expect(line.priceMissing, isTrue);
   });
 
   test('Reprise Qiyas : le nom saisi devient une fiche client, sans doublon', () async {

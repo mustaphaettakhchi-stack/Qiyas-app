@@ -10,7 +10,7 @@ import 'support/reference_data.dart';
 void main() {
   Project referenceProject() {
     final pres = samplePrestations();
-    Prestation byId(String id) => pres.firstWhere((p) => p.id == id);
+    WorkItem byId(String id) => pres.firstWhere((p) => p.id == id);
     return Project(
       id: 'ref',
       rooms: referenceRooms(),

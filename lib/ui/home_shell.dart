@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/clients_screen.dart';
-import 'screens/prices_screen.dart';
+import 'screens/library_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/projects_screen.dart';
 
@@ -18,14 +18,14 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: IndexedStack(index: _index, children: const [ProjectsScreen(), ClientsScreen(), PricesScreen(), ProfileScreen()]),
+        body: IndexedStack(index: _index, children: const [ProjectsScreen(), ClientsScreen(), LibraryScreen(), ProfileScreen()]),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
           destinations: const [
             NavigationDestination(icon: Icon(Icons.folder_outlined), selectedIcon: Icon(Icons.folder), label: 'Projets'),
             NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Clients'),
-            NavigationDestination(icon: Icon(Icons.sell_outlined), selectedIcon: Icon(Icons.sell), label: 'Prix'),
+            NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Bibliothèque'),
             NavigationDestination(icon: Icon(Icons.business_outlined), selectedIcon: Icon(Icons.business), label: 'Profil'),
           ],
         ),

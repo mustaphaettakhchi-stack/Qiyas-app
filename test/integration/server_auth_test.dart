@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lamaalam/data/app_state.dart';
 import 'package:lamaalam/data/local_store.dart';
 import 'package:lamaalam/domain/calculations.dart';
+import 'package:lamaalam/domain/metre.dart';
 import 'package:lamaalam/domain/models.dart';
 import 'package:lamaalam/session/api_client.dart';
 import 'package:lamaalam/session/auth_service.dart';
@@ -31,6 +32,7 @@ String? _adminSecret;
 String? _collabEmail;
 String? _collabSecret;
 const _collabPassword = 'Fontaine-cuivre-jasmin-port-24';
+final Map<String, int> _usedSteps = {};
 
 /// Code TOTP (RFC 6238, SHA-1, 6 chiffres, 30 s), comme une application d'authentification.
 String totp(String base32Secret, {DateTime? at, int offsetSteps = 0}) {
@@ -83,6 +85,7 @@ void main() {
     );
     final codes = await session.auth.mfaConfirm(mfaToken, totp(info.secret));
     _adminSecret = info.secret;
+    _usedSteps[info.secret] = DateTime.now().millisecondsSinceEpoch ~/ 30000;
     expect(codes, hasLength(10));
     await session.completeLogin();
     expect(session.user!.isAdmin, isTrue);
@@ -113,6 +116,7 @@ void main() {
     final collabInfo = await other.auth.mfaSetup(collabStep.mfaToken);
     await other.auth.mfaConfirm(collabStep.mfaToken, totp(collabInfo.secret));
     _collabSecret = collabInfo.secret;
+    _usedSteps[collabInfo.secret] = DateTime.now().millisecondsSinceEpoch ~/ 30000;
     await other.completeLogin();
     await expectLater(
       other.api.get('/users'),
@@ -149,15 +153,20 @@ void main() {
     expect(await replayApi.refresh(), isFalse);
   }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
 
-  /// Connexion complète ; le code TOTP du pas suivant est essayé si le code courant a déjà servi.
+  /// Connexion complète. Le serveur refuse un code déjà utilisé (protection contre le rejeu) :
+  /// on retient le dernier pas de 30 s utilisé pour chaque secret et on attend le suivant si besoin.
   Future<SessionController> loginPhone(String email, String password, String secret) async {
     final s = await newSession(MemorySessionStore());
     final step = await s.auth.login(email, password) as LoginNeedsCode;
-    try {
-      await s.auth.mfaVerify(step.mfaToken, code: totp(secret));
-    } on ApiException {
-      await s.auth.mfaVerify(step.mfaToken, code: totp(secret, offsetSteps: 1));
+    int now() => DateTime.now().millisecondsSinceEpoch ~/ 30000;
+    var candidate = now() - 1;
+    final last = _usedSteps[secret];
+    if (last != null && candidate <= last) candidate = last + 1;
+    while (candidate > now() + 1) {
+      await Future<void>.delayed(const Duration(seconds: 2));
     }
+    await s.auth.mfaVerify(step.mfaToken, code: totp(secret, offsetSteps: candidate - now()));
+    _usedSteps[secret] = candidate;
     await s.completeLogin();
     return s;
   }
@@ -296,5 +305,101 @@ void main() {
     await adminSync.syncNow();
     await collabSync.syncNow();
     expect(collab.project(p2.id), isNull, reason: 'projet de l\'administrateur, non confié au collaborateur');
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('Bibliothèque partagée, comptages et validation du métré', () async {
+    final adminSession = await loginPhone(email, password, _adminSecret!);
+    final collabSession = await loginPhone(_collabEmail!, _collabPassword, _collabSecret!);
+    final (admin, adminSync) = await phone(adminSession);
+    final (collab, collabSync) = await phone(collabSession);
+
+    // 1. L'administrateur crée fournisseur, matériau et ouvrage.
+    final supplier = admin.addSupplier();
+    admin.editLibrary(supplier, () => supplier.name = 'Céramique du Détroit');
+    final material = admin.addMaterial();
+    admin.editLibrary(material, () {
+      material
+        ..name = 'Carreau 60x60'
+        ..unit = 'm2'
+        ..supplierId = supplier.id
+        ..purchasePriceCents = 12000
+        ..salePriceCents = 18000
+        ..priceNote = 'Devis n°12';
+    });
+    final work = admin.addWorkItem(name: 'Carrelage sol posé');
+    admin.editLibrary(work, () {
+      work
+        ..category = 'floor'
+        ..unit = 'm2'
+        ..base = QuantityBase.floor
+        ..wasteRateBp = 1000
+        ..salePriceCents = 25000
+        ..components = [{'material_id': material.id, 'quantity_per_unit': 1.0}];
+    });
+    await adminSync.syncNow();
+    expect(adminSync.lastError, isNull);
+    expect(work.serverVersion, isNotNull);
+
+    // 2. Le collaborateur reçoit la bibliothèque, sans les prix d'achat.
+    await collabSync.syncNow();
+    final collabWork = collab.workItem(work.id)!;
+    expect(collabWork.salePriceCents, 25000);
+    expect(collabWork.wasteRateBp, 1000);
+    expect(collab.material(material.id)!.purchasePriceCents, isNull);
+    expect(collab.material(material.id)!.salePriceCents, 18000);
+
+    // Une modification locale du collaborateur n'est jamais envoyée.
+    collab.editLibrary(collabWork, () => collabWork.salePriceCents = 1);
+    await collabSync.syncNow();
+    await adminSync.syncNow();
+    expect(admin.workItem(work.id)!.salePriceCents, 25000);
+
+    // 3. Import CSV par l'administrateur, reçu par synchronisation.
+    final imported = await adminSession.api.post('/library/import', {
+      'kind': 'work_items',
+      'csv': 'code;categorie;designation;description;unite;base;element_compte;perte_pct;prix_vente;main_oeuvre\n'
+          'ELE-01;Électricité;Prise de courant;;u;comptage;prises;0;150;\n',
+    }) as Map;
+    expect(imported['created'], 1);
+    await adminSync.syncNow();
+    await collabSync.syncNow();
+    final prise = collab.workItems.singleWhere((w) => w.code == 'ELE-01');
+    expect(prise.base, QuantityBase.count);
+    expect(prise.countKey, 'prises');
+
+    // 4. Projet avec comptages, métré validé sur le téléphone du collaborateur.
+    final client = collab.createClient(name: 'Mme Alaoui');
+    final project = collab.createProject(clientId: client.id);
+    final room = collab.addRoom(project);
+    collab.mutate(() {
+      room
+        ..name = 'Salon'
+        ..height = 2.7
+        ..heightSource = MeasureSource.manual
+        ..walls = [for (final (i, l) in [5.0, 4.0, 5.0, 4.0].indexed) Wall(id: 'w$i', length: l)]
+        ..counts = {'prises': 6};
+    }, touch: project, room: room);
+    collab.mutate(() => project.metreValidation = buildValidation(project, userId: collabSession.user!.id, userName: 'Collaborateur Test'),
+        touch: project, meta: true);
+    await collabSync.syncNow();
+    expect(collab.pendingCount, 0, reason: collabSync.lastError);
+
+    // 5. L'administrateur reçoit le métré validé, identique (même empreinte après le serveur).
+    await adminSync.syncNow();
+    final adminProject = admin.project(project.id)!;
+    expect(adminProject.rooms.single.counts, {'prises': 6.0});
+    expect(metreState(adminProject), MetreState.validated);
+    final quote = admin.createQuote(adminProject);
+    admin.addLineFromWorkItem(adminProject, quote, admin.workItem(work.id)!);
+    admin.addLineFromWorkItem(adminProject, quote, admin.workItems.singleWhere((w) => w.code == 'ELE-01'));
+    expect(lineQuantity(adminProject, quote.lines[0]), 22); // 20 m² + 10 % de perte
+    expect(lineQuantity(adminProject, quote.lines[1]), 6); // 6 prises comptées
+    expect(quoteTotals(adminProject, quote, 20).ht, 22 * 25000 + 6 * 15000);
+
+    // Une cote modifiée ensuite rend le métré « à revalider » sur l'autre téléphone.
+    collab.mutate(() => room.walls[0].length = 5.2, touch: project, room: room);
+    await collabSync.syncNow();
+    await adminSync.syncNow();
+    expect(metreState(admin.project(project.id)!), MetreState.stale);
   }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
 }

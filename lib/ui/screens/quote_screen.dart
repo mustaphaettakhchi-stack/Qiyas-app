@@ -5,8 +5,10 @@ import '../../core/format.dart';
 import '../../core/messages.dart';
 import '../../data/app_state.dart';
 import '../../domain/calculations.dart';
+import '../../domain/metre.dart';
 import '../../domain/models.dart';
 import '../widgets/common.dart';
+import 'library_screen.dart';
 import 'preview_screen.dart';
 import 'profile_screen.dart';
 
@@ -43,11 +45,15 @@ class QuoteScreen extends StatelessWidget {
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
             child: ListView(shrinkWrap: true, children: [
-              const ListTile(title: Text('Ajouter une prestation')),
-              for (final x in s.prestations.where((x) => x.active))
+              const ListTile(title: Text('Ajouter un ouvrage de la bibliothèque')),
+              for (final x in s.workItems.where((x) => x.active))
                 ListTile(
-                  title: Text(x.name),
-                  subtitle: Text('${dh(x.unitPriceCents)} / ${x.unit} · ${kBaseLabel[x.base]}'),
+                  title: Text([if (x.code.isNotEmpty) x.code, x.name].join(' · ')),
+                  subtitle: Text([
+                    priceText(x.salePriceCents, x.currency, x.unitLabel),
+                    baseLabel(x.base, x.countKey),
+                    if (x.wasteRateBp > 0) 'perte ${pct(x.wasteRateBp)}',
+                  ].join(' · ')),
                   onTap: () => Navigator.pop(ctx, x),
                 ),
               ListTile(
@@ -59,8 +65,8 @@ class QuoteScreen extends StatelessWidget {
           ),
         ),
       );
-      if (choice is Prestation) {
-        s.addLineFromPrestation(p, quote, choice);
+      if (choice is WorkItem) {
+        s.addLineFromWorkItem(p, quote, choice);
       } else if (choice == 'free') {
         s.addFreeLine(p, quote);
       }
@@ -69,6 +75,16 @@ class QuoteScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(quote.number), actions: const [SyncBadge()]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
+        if (!locked && metreState(p) != MetreState.validated)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: AlertBox(
+              metreState(p) == MetreState.stale
+                  ? 'Le métré a changé depuis sa validation : revalidez-le avant d\'envoyer ce devis.'
+                  : 'Métré non validé : vérifiez et validez le métré avant d\'envoyer ce devis.',
+              kind: AlertKind.warning,
+            ),
+          ),
         Row(children: [
           Expanded(child: Text('${frDate(quote.date)} · ${s.clientName(p)}', style: t.bodyMedium)),
           StatusPill(quote.status),
@@ -187,7 +203,7 @@ class _LineCard extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Expanded(
-              child: l.prestationId == null && !locked
+              child: l.workItemId == null && !locked
                   ? EditField(label: 'Désignation', value: l.label, onChanged: (v) => onEdit(() => l.label = v))
                   : Text(l.label, style: t.titleSmall),
             ),
@@ -222,7 +238,10 @@ class _LineCard extends StatelessWidget {
                 suffix: 'DH',
                 value: l.unitPriceCents / 100,
                 enabled: !locked,
-                onChanged: (v) => onEdit(() => l.unitPriceCents = (v * 100).round()),
+                onChanged: (v) => onEdit(() {
+                  l.unitPriceCents = (v * 100).round();
+                  l.priceMissing = false;
+                }),
               ),
             ),
             const SizedBox(width: 8),
@@ -246,7 +265,10 @@ class _LineCard extends StatelessWidget {
                     ),
                     if (!locked) TextButton(onPressed: () => onEdit(() => l.manual = false), child: const Text('Reprendre le métré')),
                   ])
-                : Text('Quantité reprise du métré : ${kBaseLabel[l.base]}', style: t.bodySmall),
+                : Text(_trace(project, l, measures), style: t.bodySmall),
+          if (l.priceMissing)
+            Text('Prix à renseigner : ce devis ne peut pas être envoyé.',
+                style: t.bodySmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600)),
         ]),
       ),
     );
@@ -285,4 +307,13 @@ class _Totals extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Explication de la quantité d'une ligne : base, quantité nette, perte, quantité retenue.
+String _trace(Project p, QuoteLine l, Measures m) {
+  final net = lineNetQuantity(p, l, measures: m) ?? 0;
+  final base = l.base == QuantityBase.count ? kCountItems[l.countKey]?.$2 ?? 'élément compté' : kBaseLabel[l.base]!;
+  if (l.wasteRateBp == 0) return 'Quantité reprise du métré : $base = ${fmt2(net)} ${l.unit}.';
+  return 'Métré : $base = ${fmt2(net)} ${l.unit} + perte ${pct(l.wasteRateBp)} '
+      '= ${fmt2(lineQuantity(p, l, measures: m))} ${l.unit}.';
 }

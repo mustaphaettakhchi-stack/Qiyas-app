@@ -24,7 +24,7 @@ class AppState extends ChangeNotifier {
   String newId() => _uuid.v7();
 
   Future<void> init() async {
-    data = await store.load() ?? AppData(company: Company(), prestations: [], projects: []);
+    data = await store.load() ?? AppData(company: Company(), projects: []);
     _migrateLegacyClients();
     loaded = true;
     notifyListeners();
@@ -84,7 +84,15 @@ class AppState extends ChangeNotifier {
 
   // ---------- lecture ----------
   Company get company => data.company;
-  List<Prestation> get prestations => data.prestations;
+  List<WorkItem> get workItems => data.workItems.where((w) => !w.deleted).toList()
+    ..sort((a, b) => '${a.category}${a.code}${a.name}'.compareTo('${b.category}${b.code}${b.name}'));
+  List<MaterialItem> get materials => data.materials.where((m) => !m.deleted).toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  List<Supplier> get suppliers => data.suppliers.where((x) => !x.deleted).toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  WorkItem? workItem(String? id) => data.workItems.where((w) => w.id == id && !w.deleted).firstOrNull;
+  MaterialItem? material(String? id) => data.materials.where((m) => m.id == id && !m.deleted).firstOrNull;
+  Supplier? supplier(String? id) => data.suppliers.where((x) => x.id == id && !x.deleted).firstOrNull;
   List<Project> get activeProjects => data.projects.where((p) => !p.deleted && !p.archived).toList()
     ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   List<Client> get activeClients => data.clients.where((c) => !c.deleted).toList()
@@ -219,27 +227,63 @@ class AppState extends ChangeNotifier {
         }
       }, touch: p);
 
-  // ---------- prestations ----------
-  void addPrestation() => mutate(() => data.prestations.add(Prestation(id: newId(), name: 'Nouvelle prestation')));
+  // ---------- bibliothèque ----------
+  /// Modifie une fiche de la bibliothèque (à synchroniser).
+  void editLibrary(Syncable item, VoidCallback change) => mutate(() {
+        change();
+        item.markEdited();
+      });
 
-  void duplicatePrestation(Prestation src) => mutate(() {
-        final i = data.prestations.indexOf(src);
-        data.prestations.insert(
-          i + 1,
-          Prestation(
-            id: newId(),
-            name: '${src.name} (copie)',
-            description: src.description,
-            unit: src.unit,
-            base: src.base,
-            unitPriceCents: src.unitPriceCents,
-          ),
-        );
+  WorkItem addWorkItem({String name = 'Nouvel ouvrage'}) {
+    final w = WorkItem(id: newId(), name: name);
+    editLibrary(w, () => data.workItems.add(w));
+    return w;
+  }
+
+  WorkItem duplicateWorkItem(WorkItem src) {
+    final w = WorkItem.fromJson({...src.toJson(), 'id': newId(), 'sv': null, 'dirty': true})
+      ..name = '${src.name} (copie)'
+      ..code = '';
+    editLibrary(w, () => data.workItems.add(w));
+    return w;
+  }
+
+  MaterialItem addMaterial() {
+    final m = MaterialItem(id: newId(), name: 'Nouveau matériau');
+    editLibrary(m, () => data.materials.add(m));
+    return m;
+  }
+
+  Supplier addSupplier() {
+    final x = Supplier(id: newId(), name: 'Nouveau fournisseur');
+    editLibrary(x, () => data.suppliers.add(x));
+    return x;
+  }
+
+  /// Suppression d'une fiche de la bibliothèque (envoyée au serveur si elle y est connue).
+  void deleteLibrary(Syncable item) => mutate(() {
+        if (item.serverVersion == null) {
+          data.workItems.remove(item);
+          data.materials.remove(item);
+          data.suppliers.remove(item);
+        } else {
+          item
+            ..deleted = true
+            ..markEdited();
+        }
       });
 
   void addTemplate(String trade) => mutate(() {
-        for (final t in kPriceTemplates[trade] ?? const <(String, String, String, QuantityBase)>[]) {
-          data.prestations.add(Prestation(id: newId(), name: t.$1, description: t.$2, unit: t.$3, base: t.$4));
+        for (final t in kPriceTemplates[trade] ?? const <Template>[]) {
+          data.workItems.add(WorkItem(
+            id: newId(),
+            name: t.$1,
+            description: t.$2,
+            unit: t.$3,
+            base: t.$4,
+            countKey: t.$5,
+            category: t.$6,
+          ));
         }
       });
 
@@ -282,8 +326,7 @@ class AppState extends ChangeNotifier {
     return q;
   }
 
-  void addLineFromPrestation(Project p, Quote q, Prestation pres) =>
-      mutate(() => q.lines.add(lineFrom(pres, newId())), touch: p);
+  void addLineFromWorkItem(Project p, Quote q, WorkItem w) => mutate(() => q.lines.add(lineFrom(w, newId())), touch: p);
 
   void addFreeLine(Project p, Quote q) => mutate(
         () => q.lines.add(QuoteLine(id: newId(), label: 'Ligne libre', unit: 'forfait', quantity: 1, manual: true)),

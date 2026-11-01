@@ -143,7 +143,7 @@ Index : UNIQUE `(floor_id, version_no)`.
 
 ### 3.4 Bibliothèque, prix, ouvrages
 
-**suppliers** — `name`, `contact_name`, `phone`, `email`, `address`, `city`, `ice`, `notes`.
+**suppliers** *(créée, migration 0005 ; `materials`, `work_items` et `price_history` aussi, avec RLS ; `price_history` en insertion seule par déclencheur et alimentée par le serveur à chaque changement de prix ; `rooms.counts` et `projects.metre_validation` ajoutées)* — `name`, `contact_name`, `phone`, `email`, `address`, `city`, `ice`, `notes`.
 
 **materials** — `supplier_id` NULL, `category` (`floor`, `wall`, `ceiling`, `joinery`, `electricity`, `plumbing`, `masonry`, `other`), `name`, `brand`, `reference`, `unit`, `pack_size` (ex. 1,44 m² par carton), `default_waste_rate_bp` (points de base, DEFAULT 0), `current_purchase_price_cents` NULL, `current_sale_price_cents` NULL, `currency`, `city`, `price_updated_at`, `texture_file_id` NULL.
 Prix NULL = **prix non renseigné** : la ligne de devis correspondante est bloquée tant qu'un prix n'est pas saisi.

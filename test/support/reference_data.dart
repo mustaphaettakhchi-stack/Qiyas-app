@@ -25,14 +25,14 @@ List<Room> referenceRooms() => [
       _room('r5', 'Couloir', 4.0, 1.2, 2.8, 0, 0),
     ];
 
-List<Prestation> samplePrestations() => [
-      Prestation(id: 'pm', name: 'Peinture murs', description: '2 couches, enduit compris', unit: 'm²', base: QuantityBase.walls, unitPriceCents: 4500),
-      Prestation(id: 'pp', name: 'Peinture plafond', description: '2 couches', unit: 'm²', base: QuantityBase.ceiling, unitPriceCents: 5000),
-      Prestation(id: 'cs', name: 'Carrelage sol', description: 'fourni et posé', unit: 'm²', base: QuantityBase.floor, unitPriceCents: 28000),
-      Prestation(id: 'pl', name: 'Plinthes', description: 'carrelage assorti', unit: 'ml', base: QuantityBase.skirting, unitPriceCents: 6000),
-      Prestation(id: 'fp', name: 'Faux plafond plâtre', description: 'plaques BA13 sur ossature', unit: 'm²', base: QuantityBase.ceiling, unitPriceCents: 22000),
-      Prestation(id: 'dp', name: 'Dépose ancien revêtement', description: 'évacuation des gravats', unit: 'm²', base: QuantityBase.floor, unitPriceCents: 4000),
-      Prestation(id: 'ne', name: 'Nettoyage fin de chantier', unit: 'forfait', base: QuantityBase.free, unitPriceCents: 80000),
+List<WorkItem> samplePrestations() => [
+      WorkItem(id: 'pm', name: 'Peinture murs', description: '2 couches, enduit compris', unit: unitCode('m²'), base: QuantityBase.walls, salePriceCents: 4500),
+      WorkItem(id: 'pp', name: 'Peinture plafond', description: '2 couches', unit: unitCode('m²'), base: QuantityBase.ceiling, salePriceCents: 5000),
+      WorkItem(id: 'cs', name: 'Carrelage sol', description: 'fourni et posé', unit: unitCode('m²'), base: QuantityBase.floor, salePriceCents: 28000),
+      WorkItem(id: 'pl', name: 'Plinthes', description: 'carrelage assorti', unit: unitCode('ml'), base: QuantityBase.skirting, salePriceCents: 6000),
+      WorkItem(id: 'fp', name: 'Faux plafond plâtre', description: 'plaques BA13 sur ossature', unit: unitCode('m²'), base: QuantityBase.ceiling, salePriceCents: 22000),
+      WorkItem(id: 'dp', name: 'Dépose ancien revêtement', description: 'évacuation des gravats', unit: unitCode('m²'), base: QuantityBase.floor, salePriceCents: 4000),
+      WorkItem(id: 'ne', name: 'Nettoyage fin de chantier', unit: unitCode('forfait'), base: QuantityBase.free, salePriceCents: 80000),
     ];
 
 void _freeze(Project p, Quote q) {
@@ -44,7 +44,7 @@ void _freeze(Project p, Quote q) {
 
 AppData sampleData() {
   final pres = samplePrestations();
-  Prestation byId(String id) => pres.firstWhere((p) => p.id == id);
+  WorkItem byId(String id) => pres.firstWhere((p) => p.id == id);
   final now = DateTime.now();
 
   final p1 = Project(
@@ -121,7 +121,7 @@ AppData sampleData() {
       patente: '34567890',
       footer: 'Devis gratuit. Acompte à la commande, solde à la réception des travaux.',
     ),
-    prestations: pres,
+    workItems: pres,
     projects: [p1, p2, p3],
     quoteCounter: 3,
   );
