@@ -33,6 +33,9 @@ double? parseNum(String s) {
 String frDate(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
+/// "05/11/2026 à 09:30".
+String frDateTime(DateTime d) => '${frDate(d)} à ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
 /// Numéro marocain -> format international pour wa.me (212XXXXXXXXX).
 String waNumber(String phone) {
   var t = phone.replaceAll(RegExp(r'\D'), '');

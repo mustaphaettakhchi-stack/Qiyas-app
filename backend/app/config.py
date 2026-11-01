@@ -26,6 +26,11 @@ class Settings(BaseSettings):
 
     public_base_url: str = "http://localhost:8000"
 
+    # Dossier des fichiers (photos partagées, PDF de devis), hors de toute racine web.
+    files_dir: str = "/var/lib/lamaalam/files"
+    max_upload_bytes: int = 15 * 1024 * 1024
+    file_link_minutes: int = 15
+
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_user: str | None = None

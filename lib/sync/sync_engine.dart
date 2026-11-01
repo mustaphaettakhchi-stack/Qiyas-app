@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../data/app_state.dart';
+import '../data/client_space.dart';
 import '../domain/calculations.dart';
 import '../domain/models.dart';
 import '../session/api_client.dart';
@@ -11,13 +12,16 @@ import '../session/session_controller.dart';
 
 enum SyncPhase { idle, running, offline, error }
 
+/// Fabrique le PDF client d'un devis (lib/services/pdf_service.dart dans l'application).
+typedef QuotePdfBuilder = Future<Uint8List> Function(Project project, Quote quote);
+
 /// Synchronisation des fiches clients et projets avec le serveur (docs/ARCHITECTURE.md §3.4).
 ///
 /// 1. Envoi des fiches modifiées sur le téléphone, avec la version de départ.
 /// 2. Réception de tout ce qui a changé sur le serveur depuis la dernière fois.
 /// Une divergence n'est jamais écrasée en silence : elle devient un [SyncConflict].
 class SyncEngine extends ChangeNotifier {
-  SyncEngine({required this.state, required this.session, this.debounce = const Duration(seconds: 3)}) {
+  SyncEngine({required this.state, required this.session, this.debounce = const Duration(seconds: 3), this.pdfBuilder}) {
     state.onLocalChange = schedule;
     session.addListener(_onSessionChange);
   }
@@ -25,6 +29,9 @@ class SyncEngine extends ChangeNotifier {
   final AppState state;
   final SessionController session;
   final Duration debounce;
+
+  /// null : pas de publication automatique des PDF (tests).
+  final QuotePdfBuilder? pdfBuilder;
 
   SyncPhase phase = SyncPhase.idle;
   String? lastError;
@@ -73,6 +80,7 @@ class SyncEngine extends ChangeNotifier {
       if (!_checkAccount()) return;
       await _push();
       await _pull();
+      await _publishPdfs();
       _data.lastSyncAt = DateTime.now();
       phase = SyncPhase.idle;
       lastError = null;
@@ -221,6 +229,51 @@ class SyncEngine extends ChangeNotifier {
         // Pièce déjà inaccessible ou disparue côté serveur : rien à supprimer de plus.
         _data.roomTombstones.remove(t);
     }
+  }
+
+  // ---------- PDF des devis envoyés (espace client) ----------
+
+  /// Devis dont le PDF peut être déposé : envoyé depuis ce téléphone, synchronisé,
+  /// numéroté et encore à l'état envoyé, accepté ou refusé sur le serveur.
+  static bool pdfPublishable(Quote q) =>
+      q.clientPdfPending &&
+      !q.dirty &&
+      !q.legacy &&
+      q.syncError == null &&
+      q.serverVersion != null &&
+      q.number != null &&
+      (q.status == QuoteStatus.sent || q.status == QuoteStatus.accepted || q.status == QuoteStatus.refused);
+
+  Future<void> _publishPdfs() async {
+    if (pdfBuilder == null) return;
+    for (final p in _data.projects) {
+      if (p.deleted) continue;
+      for (final q in p.quotes) {
+        if (!pdfPublishable(q) || _inConflict('quotes', q.id)) continue;
+        try {
+          await publishQuotePdf(p, q);
+        } on ApiException catch (e) {
+          if (e.isNetwork) rethrow;
+          // Refus ponctuel : nouvel essai à la prochaine synchronisation, la fiche
+          // « Espace client » du projet affiche le PDF comme non publié.
+        }
+      }
+    }
+  }
+
+  /// Dépose le PDF du devis pour le client. Un PDF déjà présent sur le serveur (409)
+  /// vaut publication : le serveur n'en garde qu'un par devis et ne le remplace jamais.
+  Future<void> publishQuotePdf(Project p, Quote q) async {
+    final builder = pdfBuilder;
+    if (builder == null) throw const ApiException('Publication du PDF indisponible.', status: 0);
+    try {
+      await ClientSpaceApi(_api).uploadQuotePdf(p.id, q.id, await builder(p, q));
+    } on ApiException catch (e) {
+      if (e.status != 409) rethrow;
+    }
+    q.clientPdfPending = false;
+    await state.afterSync();
+    notifyListeners();
   }
 
   // ---------- réception ----------

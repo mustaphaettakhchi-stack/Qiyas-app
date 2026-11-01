@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import 'session_store.dart';
@@ -92,35 +94,55 @@ class ApiClient {
   /// Requête sans session (connexion, invitation).
   Future<dynamic> postPublic(String path, Object body) => _send('POST', path, body: body, auth: false);
 
+  /// Envoi d'un fichier (formulaire multipart). Le formulaire est reconstruit si la
+  /// requête doit être rejouée après renouvellement de la session.
+  Future<dynamic> upload(String path, {required Map<String, String> fields, required Uint8List bytes, required String filename}) =>
+      _authed('POST', path, body: () => FormData.fromMap({...fields, 'file': MultipartFile.fromBytes(bytes, filename: filename)}));
+
+  /// Téléchargement par lien signé (`/api/v1/files/download/...`, valable 15 minutes).
+  /// Le lien porte sa propre autorisation : aucun jeton n'est envoyé.
+  Future<Uint8List> download(String signedPath) async {
+    // Le chemin vient du serveur : il ne doit désigner que le téléchargement de fichiers
+    // de ce même serveur (jamais un autre hôte).
+    if (!RegExp(r'^/api/v1/files/download/[0-9a-f-]+\?[A-Za-z0-9=&_.%-]+$').hasMatch(signedPath)) {
+      throw const ApiException('Lien de téléchargement invalide.', status: 0);
+    }
+    final r = await _send('GET', signedPath, auth: false, raw: true);
+    return Uint8List.fromList(r as List<int>);
+  }
+
   Future<dynamic> _authed(String method, String path, {Object? body}) async {
     if (_accessToken == null && !await refresh()) {
       onSessionRevoked?.call();
       throw const ApiException('Session expirée. Reconnectez-vous.', status: 401);
     }
+    Object? data() => body is Object? Function() ? body() : body;
     try {
-      return await _send(method, path, body: body, auth: true);
+      return await _send(method, path, body: data(), auth: true);
     } on ApiException catch (e) {
       if (!e.isUnauthorized) rethrow;
       if (!await refresh()) {
         onSessionRevoked?.call();
         rethrow;
       }
-      return _send(method, path, body: body, auth: true);
+      return _send(method, path, body: data(), auth: true);
     }
   }
 
-  Future<dynamic> _send(String method, String path, {Object? body, required bool auth}) async {
+  /// [raw] : [path] est un chemin complet du serveur (lien signé) et la réponse est binaire.
+  Future<dynamic> _send(String method, String path, {Object? body, required bool auth, bool raw = false}) async {
     final base = _baseUrl;
     if (base == null) throw const ApiException('Adresse du serveur non renseignée.', status: 0);
     try {
       final r = await _dio.request<dynamic>(
-        '$base/api/v1$path',
+        raw ? '$base$path' : '$base/api/v1$path',
         data: body,
         options: Options(
           method: method,
           headers: {if (auth && _accessToken != null) 'Authorization': 'Bearer $_accessToken'},
-          sendTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 30),
+          responseType: raw ? ResponseType.bytes : null,
+          sendTimeout: Duration(seconds: body is FormData ? 120 : 20),
+          receiveTimeout: Duration(seconds: raw ? 120 : 30),
           validateStatus: (_) => true,
         ),
       );
@@ -145,6 +167,8 @@ class ApiClient {
       401 => 'Session expirée. Reconnectez-vous.',
       403 => 'Action réservée à un autre profil.',
       404 => 'Élément introuvable.',
+      410 => 'Lien expiré. Réessayez.',
+      413 => 'Fichier trop volumineux (15 Mo au maximum).',
       429 => 'Trop de tentatives. Réessayez dans quelques minutes.',
       _ => 'Le serveur a rencontré une erreur (${r.statusCode}). Réessayez plus tard.',
     };

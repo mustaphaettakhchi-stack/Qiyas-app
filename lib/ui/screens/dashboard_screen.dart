@@ -29,6 +29,8 @@ const kActivityLabels = {
   'estimate.refuse': 'Devis refusé',
   'invitation.accept': 'Nouveau membre',
   'library.import': 'Bibliothèque importée',
+  'message.post': 'Message',
+  'file.share': 'Photo partagée avec le client',
 };
 
 /// Accueil : indicateurs, raccourcis, actions à mener, derniers projets, dernières opérations.

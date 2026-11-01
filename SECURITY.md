@@ -55,6 +55,15 @@ Hypothèse retenue sous réserve de la décision D-05 :
 - Contrôle du type réel (signature binaire) et de la taille à la réception ; métadonnées EXIF de géolocalisation **retirées** des copies partagées avec les clients (conservées dans l'original interne pour la traçabilité du chantier, sauf décision contraire).
 - Volume de stockage chiffré (LUKS) sur le serveur.
 
+**Mise en œuvre au lot 1.8** (espace client) :
+- Types acceptés : JPEG, PNG, PDF, reconnus par leur signature binaire (l'extension et le type annoncé sont ignorés) ; 15 Mo au maximum.
+- Fichiers rangés dans `LAMAALAM_FILES_DIR` sous un nom aléatoire (`{organisation}/{identifiant}`), écriture atomique ; la base garde la taille, le type et l'empreinte SHA-256.
+- Photos : l'original interne est conservé tel quel ; le client reçoit une **copie réencodée sans aucune métadonnée** (EXIF, GPS, appareil), produite à l'envoi. Une photo n'est visible du client que si l'équipe l'a explicitement partagée ; le partage peut être retiré, et un lien déjà émis cesse alors de fonctionner.
+- PDF de devis : un seul par devis, jamais remplacé (409), accepté uniquement pour un devis envoyé, accepté ou refusé.
+- Téléchargement : lien signé HMAC-SHA256 valable 15 minutes, lié à l'utilisateur, à l'organisation et à la variante (originale ou client) ; un lien modifié est refusé (403), un lien expiré aussi (410) ; le compte doit être encore actif. Réponse `Cache-Control: no-store`.
+- Cloisonnement : un compte client ne voit que les projets rattachés à **sa** fiche client ; tout le reste répond 404, comme si rien n'existait. Vérifié par des tests automatiques (client A contre client B, autre organisation) ; **le test d'intrusion manuel prévu au critère de sortie reste à faire**.
+- **Pas encore fait** : chiffrement du volume (LUKS, lot 1.9 avec le déploiement) ; analyse antivirus des fichiers reçus ; sauvegarde des fichiers (lot 1.9).
+
 ## 6. Communications
 
 - HTTPS uniquement via Caddy, certificats Let's Encrypt, HSTS, redirection HTTP → HTTPS.

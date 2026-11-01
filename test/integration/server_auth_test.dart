@@ -1,12 +1,14 @@
 // Test de bout en bout contre un vrai serveur LAMAALAM.
 // Lancé par tool/integration_test.sh ; ignoré si LAMAALAM_IT_API_URL n'est pas défini.
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lamaalam/data/app_state.dart';
+import 'package:lamaalam/data/client_space.dart';
 import 'package:lamaalam/data/local_store.dart';
 import 'package:lamaalam/domain/calculations.dart';
 import 'package:lamaalam/domain/dashboard.dart';
@@ -498,5 +500,119 @@ void main() {
     expect(adminProject.status, 'won', reason: 'le devis accepté fait passer le projet en « accepté »');
     final activity = await adminSession.api.get('/dashboard/activity') as List;
     expect(activity.map((a) => (a as Map)['action']), contains('estimate.accept'));
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('Espace client : invitation, devis publié, photo partagée, cloisonnement, messages', () async {
+    final adminSession = await loginPhone(email, password, _adminSecret!);
+    final state = AppState(store: _MemoryStore());
+    await state.init();
+    state.data.company.ice = '001234567000089';
+    final published = <String, Uint8List>{};
+    final sync = SyncEngine(
+      state: state,
+      session: adminSession,
+      debounce: const Duration(days: 1),
+      pdfBuilder: (p, q) async => published[q.id] = Uint8List.fromList(utf8.encode('%PDF-1.4 devis ${q.number}')),
+    );
+    await sync.syncNow();
+
+    // 1. Un projet du client A avec un devis envoyé ; un client B sans projet.
+    final clientA = state.createClient(name: 'Mme Alaoui');
+    final clientB = state.createClient(name: 'M. Tazi');
+    state.mutate(() {
+      clientA.consentAt = DateTime.now();
+      clientA.consentTextVersion = Client.currentConsentVersion;
+    }, client: clientA);
+    final project = state.createProject(clientId: clientA.id);
+    final room = state.addRoom(project);
+    state.mutate(() {
+      room
+        ..heightSource = MeasureSource.manual
+        ..walls = [for (final (i, l) in [4.0, 3.0, 4.0, 3.0].indexed) Wall(id: 'w$i', length: l)];
+    }, touch: project, room: room);
+    state.mutate(() => project.metreValidation = buildValidation(project, userId: adminSession.user!.id, userName: 'Admin'),
+        touch: project, meta: true);
+    final quote = state.createQuote(project);
+    state.addLineFromWorkItem(project, quote, state.workItems.firstWhere((w) => w.base == QuantityBase.floor && w.salePriceCents != null));
+    final draft = state.createQuote(project); // brouillon : jamais visible du client
+    await sync.syncNow();
+    state.validateQuote(project, quote, userId: adminSession.user!.id);
+    await sync.syncNow();
+    state.markSent(project, quote);
+    expect(quote.clientPdfPending, isTrue);
+    await sync.syncNow();
+    expect(sync.lastError, isNull);
+    expect(quote.clientPdfPending, isFalse, reason: 'PDF publié après synchronisation de l\'envoi');
+    expect(published.keys, [quote.id]);
+
+    // 2. Une photo partagée, une autre gardée pour l'équipe.
+    final staff = ClientSpaceApi(adminSession.api);
+    final png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAE0lEQVR4nGP81MOAFTBhFx6sEgAvfQGObY7uZgAAAABJRU5ErkJggg==');
+    await staff.uploadPhoto(project.id, png, caption: 'Salon avant travaux');
+    await staff.uploadPhoto(project.id, png, caption: 'Photo interne', visibleToClient: false);
+
+    // 3. Invitation des deux clients ; connexion sans double authentification.
+    Future<SessionController> invite(Client c, String address) async {
+      final inv = Map<String, dynamic>.from(await adminSession.api.post('/invitations', {
+        'email': address,
+        'full_name': c.displayName,
+        'role': 'client',
+        'client_id': c.id,
+      }) as Map);
+      final token = (inv['invitation_url'] as String).split('#').last;
+      await adminSession.api.postPublic('/invitations/accept', {'token': token, 'password': _collabPassword});
+      final s = await newSession(MemorySessionStore());
+      expect(await s.auth.login(address, _collabPassword), isA<LoginDone>());
+      await s.completeLogin();
+      expect(s.user!.isStaff, isFalse);
+      return s;
+    }
+
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final sessionA = await invite(clientA, 'client-a-$stamp@exemple.ma');
+    final sessionB = await invite(clientB, 'client-b-$stamp@exemple.ma');
+    final a = ClientSpaceApi(sessionA.api);
+    final b = ClientSpaceApi(sessionB.api);
+
+    // Le téléphone d'un client ne synchronise rien.
+    final clientPhone = SyncEngine(state: AppState(store: _MemoryStore()), session: sessionA, debounce: const Duration(days: 1));
+    expect(clientPhone.enabled, isFalse);
+
+    // 4. Le client A voit son projet, le devis envoyé et son PDF, la photo partagée seulement.
+    expect((await a.projects()).map((p) => p.id), [project.id]);
+    final detail = await a.project(project.id);
+    expect(detail.quotes.map((q) => q.id), [quote.id]);
+    expect(detail.quotes.single.id, isNot(draft.id));
+    expect(detail.quotes.single.totalTtcCents, quoteTotals(project, quote).ttc);
+    expect(await a.fileBytes(detail.quotes.single.pdfFileId!), published[quote.id]);
+    expect(detail.photos.map((p) => p.caption), ['Salon avant travaux']);
+    final photo = await a.fileBytes(detail.photos.single.id);
+    expect(photo.sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]); // PNG
+    expect(detail.timeline.map((t) => t.action), containsAll(['project.create', 'estimate.send']));
+
+    // 5. Le client B ne voit rien du client A (A8.1).
+    expect(await b.projects(), isEmpty);
+    for (final call in [
+      () => b.project(project.id),
+      () => b.messages(project.id, asClient: true),
+      () => b.fileBytes(detail.photos.single.id),
+      () => b.fileBytes(detail.quotes.single.pdfFileId!),
+    ]) {
+      await expectLater(call(), throwsA(isA<ApiException>().having((e) => e.status, 'statut', 404)));
+    }
+    await expectLater(sessionA.api.get('/sync/pull?cursor=0'), throwsA(isA<ApiException>().having((e) => e.status, 'statut', 403)));
+
+    // 6. Partage retiré : la photo disparaît de l'espace client.
+    final files = await staff.projectFiles(project.id);
+    final shared = files.singleWhere((f) => f.caption == 'Salon avant travaux');
+    await staff.setShared(shared.id, false);
+    expect((await a.project(project.id)).photos, isEmpty);
+
+    // 7. Messages dans les deux sens.
+    await a.postMessage(project.id, 'Quand commencez-vous ?', asClient: true);
+    await staff.postMessage(project.id, 'Lundi à 9 h.', asClient: false);
+    final thread = await a.messages(project.id, asClient: true);
+    expect(thread.map((m) => (m.fromClient, m.body)), [(true, 'Quand commencez-vous ?'), (false, 'Lundi à 9 h.')]);
+    expect((await staff.messages(project.id, asClient: false)).length, 2);
   }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
 }

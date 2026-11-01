@@ -774,6 +774,7 @@ class Quote with Syncable {
     this.decidedAt,
     this.decisionNote = '',
     this.legacy = false,
+    this.clientPdfPending = false,
   })  : estimateId = estimateId ?? id,
         lines = lines ?? [];
 
@@ -812,6 +813,10 @@ class Quote with Syncable {
   /// Devis envoyé avec l'ancienne version Qiyas : conservé sur le téléphone, jamais synchronisé.
   bool legacy;
 
+  /// Le PDF de ce devis envoyé reste à publier dans l'espace client (donnée locale,
+  /// jamais transmise : le PDF lui-même est déposé sur le serveur après synchronisation).
+  bool clientPdfPending;
+
   bool get locked => status != QuoteStatus.draft;
 
   /// Libellé affiché : numéro, ou « Brouillon » tant que le serveur n'en a pas attribué.
@@ -845,6 +850,7 @@ class Quote with Syncable {
         'decidedAt': decidedAt?.toIso8601String(),
         'decisionNote': decisionNote,
         'legacy': legacy,
+        'pdfPending': clientPdfPending,
         ...syncJson(),
       };
 
@@ -879,6 +885,7 @@ class Quote with Syncable {
       decisionNote: _s(j['decisionNote']),
       // Devis Qiyas déjà envoyés : numérotés localement, ils restent sur le téléphone.
       legacy: j['legacy'] == true || (!isNew && status != QuoteStatus.draft),
+      clientPdfPending: j['pdfPending'] == true,
     );
     if (!isNew && status == QuoteStatus.draft) q.number = null; // le serveur attribuera le numéro
     q.readSync(j);

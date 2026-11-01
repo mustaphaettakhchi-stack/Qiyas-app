@@ -39,8 +39,8 @@ class SyncScreen extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         const AlertBox(
-          'Sont partagés avec le serveur : les fiches clients et les fiches projets. '
-          'Les pièces, photos et devis restent pour l\'instant sur ce téléphone uniquement.',
+          'Sont partagés avec le serveur : les clients, les projets, leurs pièces, les devis et la bibliothèque. '
+          'Les photos restent sur ce téléphone, sauf celles partagées dans l\'espace client.',
         ),
         if (s.data.conflicts.isNotEmpty) ...[
           const SectionHeader('Conflits à arbitrer'),

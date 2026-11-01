@@ -19,6 +19,9 @@ os.environ["LAMAALAM_DATABASE_URL"] = DB_URL
 os.environ["LAMAALAM_ENVIRONMENT"] = "test"
 os.environ["LAMAALAM_JWT_SECRET"] = "secret-de-test-uniquement-" + "x" * 32
 os.environ["LAMAALAM_TOTP_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+import tempfile  # noqa: E402
+
+os.environ["LAMAALAM_FILES_DIR"] = tempfile.mkdtemp(prefix="lamaalam-files-")
 for key in ("LAMAALAM_SMTP_HOST", "LAMAALAM_SMTP_FROM"):
     os.environ.pop(key, None)
 

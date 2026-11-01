@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
-from .routes import auth, dashboard, library, sync, users
+from .routes import auth, client_space, dashboard, files, library, sync, users
 
 API_PREFIX = "/api/v1"
 
@@ -26,6 +26,8 @@ PUBLIC_ROUTES = frozenset(
         ("POST", f"{API_PREFIX}/auth/refresh"),
         ("POST", f"{API_PREFIX}/invitations/accept"),
         ("POST", f"{API_PREFIX}/password-reset/accept"),
+        # Lien signé à durée limitée (15 min), lié à l'utilisateur : la signature tient lieu de session.
+        ("GET", f"{API_PREFIX}/files/download/{{file_id}}"),
     }
 )
 
@@ -85,6 +87,8 @@ def create_app() -> FastAPI:
     app.include_router(sync.router, prefix=API_PREFIX)
     app.include_router(library.router, prefix=API_PREFIX)
     app.include_router(dashboard.router, prefix=API_PREFIX)
+    app.include_router(files.router, prefix=API_PREFIX)
+    app.include_router(client_space.router, prefix=API_PREFIX)
     return app
 
 

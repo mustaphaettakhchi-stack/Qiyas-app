@@ -467,7 +467,8 @@ class AppState extends ChangeNotifier {
   void markSent(Project p, Quote q) => editQuote(p, q, () {
         q
           ..status = QuoteStatus.sent
-          ..sentAt = DateTime.now();
+          ..sentAt = DateTime.now()
+          ..clientPdfPending = true;
         _advanceProject(p, 'estimate_sent');
       });
 

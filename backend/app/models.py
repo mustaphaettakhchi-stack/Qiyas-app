@@ -101,7 +101,7 @@ class User(Timestamped, Base):
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Rattachement à une fiche client : la clé étrangère sera ajoutée avec la table clients (lot 1.2).
-    client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id"))
 
     roles: Mapped[list["UserRole"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
@@ -165,7 +165,7 @@ class Invitation(Base):
     email: Mapped[str] = mapped_column(String(254))
     full_name: Mapped[str] = mapped_column(String(200))
     role: Mapped[Role] = mapped_column(_enum(Role, "user_role", ))
-    client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id"))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     invited_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -437,6 +437,53 @@ class QuoteVersion(Synced, Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_note: Mapped[str] = mapped_column(Text, default="")
+
+
+# ---------- espace client (lot 1.8) ----------
+
+
+class FileObject(Base):
+    """Fichier stocké par le serveur (photo partagée, PDF de devis). Jamais public.
+
+    Pour une photo, deux copies : l'original (interne, métadonnées conservées) et une copie
+    sans aucune métadonnée (EXIF, GPS), seule servie au client.
+    """
+
+    __tablename__ = "files"
+    __table_args__ = (
+        CheckConstraint("kind IN ('photo', 'quote_pdf')", name="ck_files_kind"),
+        UniqueConstraint("quote_version_id", name="uq_files_quote_pdf"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    quote_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("estimate_versions.id"))
+    kind: Mapped[str] = mapped_column(String(20))
+    storage_key: Mapped[str] = mapped_column(String(200))
+    client_storage_key: Mapped[str | None] = mapped_column(String(200))
+    mime_type: Mapped[str] = mapped_column(String(50))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    caption: Mapped[str] = mapped_column(String(300), default="")
+    visible_to_client: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Message(Base):
+    """Fil de discussion d'un projet entre le client et l'équipe."""
+
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    from_client: Mapped[bool] = mapped_column(Boolean, default=False)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 class OrgCounter(Base):

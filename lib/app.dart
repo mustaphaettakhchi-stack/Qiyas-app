@@ -6,6 +6,7 @@ import 'data/app_state.dart';
 import 'ui/home_shell.dart';
 import 'session/session_controller.dart';
 import 'ui/screens/auth/login_screen.dart';
+import 'ui/screens/client/client_home_screen.dart';
 
 /// Charte Groupe LAMAALAM (docs/ARCHITECTURE.md §8).
 abstract final class Brand {
@@ -97,7 +98,10 @@ class LamaalamApp extends StatelessWidget {
       ],
       home: !s.loaded || !session.restored
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : (session.isAuthenticated ? const HomeShell() : const LoginScreen()),
+          : !session.isAuthenticated
+              ? const LoginScreen()
+              // Un compte client n'accède qu'à son espace en lecture seule (USER_FLOWS P8).
+              : (session.isDemo || session.user!.isStaff ? const HomeShell() : const ClientHomeScreen()),
     );
   }
 }

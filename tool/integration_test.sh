@@ -11,6 +11,7 @@ PORT="${LAMAALAM_IT_PORT:-8765}"
 
 export LAMAALAM_DATABASE_URL="$LAMAALAM_TEST_DATABASE_URL"
 export LAMAALAM_ENVIRONMENT=test
+export LAMAALAM_FILES_DIR="$(mktemp -d)"
 export LAMAALAM_JWT_SECRET="$($PY -c 'import secrets;print(secrets.token_urlsafe(48))')"
 export LAMAALAM_TOTP_ENCRYPTION_KEY="$($PY -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')"
 export LAMAALAM_IT_ADMIN_EMAIL="admin-$(date +%s)@exemple.ma"

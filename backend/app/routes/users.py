@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import Context, require_admin
 from ..mailer import send_invitation
-from ..models import AuthSession, Invitation, Organization, PasswordReset, Role, User, UserRole, UserStatus
+from ..models import AuthSession, Client, Invitation, Organization, PasswordReset, Role, User, UserRole, UserStatus
 from ..security import hash_password, hash_token, new_opaque_token, now, password_problems
 from .auth import normalize_email
 
@@ -51,6 +51,8 @@ class InvitationIn(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=200)
     role: Role
+    # Obligatoire pour un compte client : la fiche client à laquelle il donne accès.
+    client_id: uuid.UUID | None = None
 
 
 class InvitationOut(BaseModel):
@@ -212,11 +214,17 @@ def create_invitation(
     db: Session = Depends(get_db),
 ) -> InvitationOut:
     if body.role == Role.client:
-        # Un compte client doit être rattaché à une fiche client : disponible avec le lot 1.2.
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "Les comptes clients seront disponibles avec la gestion des clients.",
+        if body.client_id is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Choisissez la fiche client à rattacher au compte.")
+        exists = db.scalar(
+            select(Client.id).where(
+                Client.id == body.client_id, Client.organization_id == ctx.organization_id, Client.deleted_at.is_(None)
+            )
         )
+        if exists is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, NOT_FOUND)
+    elif body.client_id is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Seul un compte client se rattache à une fiche client.")
     email = normalize_email(body.email)
     if db.scalar(select(User.id).where(User.email == email)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Un compte existe déjà avec cette adresse.")
@@ -239,6 +247,7 @@ def create_invitation(
         email=email,
         full_name=body.full_name.strip(),
         role=body.role,
+        client_id=body.client_id if body.role == Role.client else None,
         token_hash=hash_token(token),
         invited_by=ctx.user.id,
         expires_at=now() + timedelta(hours=settings.invitation_hours),

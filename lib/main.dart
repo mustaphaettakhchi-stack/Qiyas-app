@@ -5,6 +5,7 @@ import 'app.dart';
 import 'data/app_state.dart';
 import 'data/local_store.dart';
 import 'services/laser_meter_service.dart';
+import 'services/pdf_service.dart';
 import 'session/api_client.dart';
 import 'session/auth_service.dart';
 import 'session/session_controller.dart';
@@ -19,7 +20,11 @@ Future<void> main() async {
   final api = ApiClient(store: store);
   final session = SessionController(api: api, auth: AuthService(api), store: store);
   await state.init();
-  final sync = SyncEngine(state: state, session: session);
+  final sync = SyncEngine(
+    state: state,
+    session: session,
+    pdfBuilder: (p, q) => PdfService.build(company: state.company, project: p, quote: q, client: state.clientOf(p)),
+  );
   // La vérification en ligne de la session se poursuit en arrière-plan.
   session.restore();
   runApp(

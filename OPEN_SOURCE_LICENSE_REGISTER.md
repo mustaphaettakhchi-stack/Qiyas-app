@@ -73,6 +73,7 @@ Statuts : **APPROUVÉ** (intégrable) · **À EXAMINER** (suspendu, décision LA
 | cryptography | github.com/pyca/cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Oui | Notice | OpenSSL embarqué dans les roues (Apache-2.0) | Faible | APPROUVÉ |
 | zxcvbn (Python, contrôle de robustesse des mots de passe) | github.com/dwolfhub/zxcvbn-python | 4.5.0 | MIT | Oui | Notice | Listes de fréquence intégrées au paquet | Dernière publication en février 2025 : maintenance faible, à surveiller | APPROUVÉ |
 | python-multipart | github.com/Kludex/python-multipart | 0.0.33 | Apache-2.0 | Oui | Notice | — | Faible | APPROUVÉ |
+| Pillow (lot 1.8) | github.com/python-pillow/Pillow | 13.0.0 | MIT-CMU | Oui | Notice | libjpeg, libpng, zlib (roues PyPI) | Faible ; sert à produire la copie « client » des photos sans métadonnées (EXIF, GPS) | APPROUVÉ |
 | email-validator | github.com/JoshData/python-email-validator | 2.3.0 | Unlicense | Oui | Aucune | dnspython (ISC) | Faible | APPROUVÉ |
 | Jinja2 | github.com/pallets/jinja | 3.1.6 | BSD-3-Clause | Oui | Notice | MarkupSafe (BSD-3) | Faible | APPROUVÉ |
 | structlog | github.com/hynek/structlog | 26.1.0 | MIT OR Apache-2.0 | Oui | Notice | — | Faible | APPROUVÉ |

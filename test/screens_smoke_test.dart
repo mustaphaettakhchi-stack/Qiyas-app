@@ -74,7 +74,11 @@ void main() {
     expect(find.text('M. Benali'), findsOneWidget);
     expect(find.text('Rénovation'), findsOneWidget);
     expect(find.text('Référence attribuée à la première synchronisation'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Ajouter'), 200, scrollable: find.byType(Scrollable).last);
+    await tester.scrollUntilVisible(
+      find.text('Ajouter'),
+      200,
+      scrollable: find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)).first,
+    );
     await tester.tap(find.text('Ajouter'));
     await tester.pump();
     expect(find.textContaining('consentement'), findsOneWidget);

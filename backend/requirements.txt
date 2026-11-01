@@ -13,3 +13,4 @@ pyotp==2.10.0
 cryptography==50.0.2
 zxcvbn==4.5.0
 python-multipart==0.0.33
+pillow==13.0.0

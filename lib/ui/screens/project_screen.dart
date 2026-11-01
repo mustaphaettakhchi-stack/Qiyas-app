@@ -5,8 +5,10 @@ import '../../core/format.dart';
 import '../../core/labels.dart';
 import '../../data/app_state.dart';
 import '../../domain/calculations.dart';
+import '../../session/session_controller.dart';
 import '../widgets/common.dart';
 import '../widgets/photos.dart';
+import 'client_share_screen.dart';
 import 'clients_screen.dart';
 import 'metre_screen.dart';
 import 'plan_screen.dart';
@@ -85,6 +87,17 @@ class ProjectScreen extends StatelessWidget {
                 : () => open(ClientScreen(clientId: client.id)),
           ),
         ),
+        if (!context.watch<SessionController>().isDemo)
+          Card(
+            margin: const EdgeInsets.only(top: 8),
+            child: ListTile(
+              leading: const Icon(Icons.visibility_outlined),
+              title: const Text('Espace client'),
+              subtitle: const Text('Photos partagées, devis publiés, messages'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => open(ClientShareScreen(projectId: p.id)),
+            ),
+          ),
         EditField(key: ValueKey('name-${p.id}'), label: 'Nom du projet (facultatif)', value: p.name, onChanged: (v) => meta(() => p.name = v)),
         _Choice(
           label: 'Nature des travaux',
@@ -137,7 +150,8 @@ class ProjectScreen extends StatelessWidget {
         EditField(key: ValueKey('desc-${p.id}'), label: 'Description des travaux', value: p.description, maxLines: 3, onChanged: (v) => meta(() => p.description = v)),
         EditField(key: ValueKey('notes-${p.id}'), label: 'Notes', value: p.notes, maxLines: 3, onChanged: (v) => meta(() => p.notes = v)),
         const SizedBox(height: 8),
-        const AlertBox('Pièces, photos et devis : enregistrés sur ce téléphone uniquement pour l\'instant.'),
+        const AlertBox('Photos enregistrées sur ce téléphone uniquement ; seules celles partagées dans l\'espace client '
+            'sont envoyées au serveur.'),
         SectionHeader(
           'Photos du chantier',
           trailing: TextButton.icon(

@@ -88,3 +88,4 @@ def require_roles(*allowed: Role) -> Callable[[Context], Context]:
 
 require_admin = require_roles(Role.admin)
 require_staff = require_roles(Role.admin, Role.collaborator)
+require_client = require_roles(Role.client)

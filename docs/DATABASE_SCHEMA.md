@@ -92,6 +92,7 @@ Contrainte : UNIQUE `(user_id, role, scope_project_id)`. Contrainte applicative 
 - **auth_sessions** — `user_id`, `refresh_token_hash`, `device_label`, `ip`, `user_agent`, `expires_at`, `revoked_at`. Index `(user_id) WHERE revoked_at IS NULL`.
 - **invitations** — `email`, `role`, `client_id` NULL, `token_hash`, `expires_at`, `accepted_at`.
 - **files** — `storage_key`, `mime_type`, `size_bytes`, `sha256`, `width`, `height`, `duration_s`, `captured_at`, `project_id` NULL, `visibility` (`internal`, `client_shared`) DEFAULT `internal`.
+  - *Mis en œuvre au lot 1.8 (migration 0007)* : `project_id`, `quote_version_id` (unique, PDF d'un devis), `kind` (`photo`, `quote_pdf`), `storage_key`, `client_storage_key` (copie sans métadonnées), `mime_type`, `size_bytes`, `sha256`, `caption`, `visible_to_client` (booléen, faux par défaut), `created_by`, `created_at`, `deleted_at` ; RLS par organisation. **Écarts** : booléen `visible_to_client` au lieu de l'énumération `visibility` ; `width`, `height`, `duration_s`, `captured_at` non encore utiles (photos et vidéo de chantier : phases suivantes).
 - **tax_rates** — `label`, `rate_bp` (taux en points de base, 2000 = 20 %), `valid_from`, `valid_to`, `country`.
 - **sync_cursors** — `user_id`, `device_id`, `last_server_version` (synchronisation incrémentale).
 
@@ -190,6 +191,7 @@ Contraintes : UNIQUE `(estimate_id, version_no)` ; trigger refusant toute modifi
 **notifications** — `user_id`, `kind`, `title`, `body`, `project_id` NULL, `read_at`.
 
 **messages** — `project_id`, `author_id`, `body`, `attachment_file_id` NULL, `read_by` (`uuid[]`). Fil unique par projet entre le client et l'équipe.
+*Mis en œuvre au lot 1.8 (migration 0007)* : `project_id`, `author_id`, `from_client`, `body` (2 000 caractères au plus), `created_at` ; RLS par organisation. **Écarts** : pas de pièce jointe ni de suivi de lecture (`read_by`) pour l'instant. `users.client_id` et `invitations.client_id` deviennent des clés étrangères vers `clients`.
 
 **audit_logs** — `occurred_at`, `actor_id` NULL, `actor_role`, `action` (ex. `estimate.validate`, `user.role.change`, `file.download`, `data.export`, `data.erase`), `entity_table`, `entity_id`, `project_id` NULL, `ip`, `details` (`jsonb`, sans donnée sensible en clair).
 Insertion seule : le rôle applicatif PostgreSQL n'a ni `UPDATE` ni `DELETE` sur cette table. Partitionnement mensuel par `occurred_at`. Pas de `version`, `deleted_at`, ni `updated_*`.
