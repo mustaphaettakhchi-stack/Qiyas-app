@@ -41,6 +41,38 @@ jobs:
           LAMAALAM_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
         run: alembic check
 
+  bout-en-bout:
+    # Application Flutter ↔ serveur réel : connexion, 2FA, invitation, droits, déconnexion.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lamaalam
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: lamaalam_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lamaalam" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Dépendances
+        run: |
+          pip install -r backend/requirements.txt
+          flutter pub get
+      - name: Test de bout en bout
+        env:
+          LAMAALAM_TEST_DATABASE_URL: postgresql+psycopg://lamaalam:test@localhost:5432/lamaalam_test
+          PYTHON: python
+        run: tool/integration_test.sh
+
   verifier-et-construire:
     runs-on: ubuntu-latest
     steps:
@@ -68,6 +100,10 @@ jobs:
           flutter create --platforms=android --org ma.grouplamaalam --project-name lamaalam . > create.txt 2>&1
           rm -f test/widget_test.dart
           flutter build apk --debug > build.txt 2>&1; B=$?
+          mkdir -p apk && cp build/app/outputs/flutter-apk/app-debug.apk apk/lamaalam-serveur.apk 2>/dev/null || true
+          # Version de démonstration sans serveur, tant qu'aucun hébergement n'est validé (D-06).
+          flutter build apk --debug --dart-define=LAMAALAM_DEMO=true >> build.txt 2>&1 || B=1
+          cp build/app/outputs/flutter-apk/app-debug.apk apk/lamaalam-demonstration-sans-serveur.apk 2>/dev/null || true
           K=$(grep -c "apply Kotlin Gradle Plugin" build.txt)
           {
             echo "# Rapport CI"
@@ -100,8 +136,8 @@ jobs:
         if: env.B == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: lamaalam-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: lamaalam-apk-test
+          path: apk/
           retention-days: 30
 
       - name: Publier le rapport sur la branche ci-results

@@ -42,7 +42,7 @@ void main() {
   });
 
   testWidgets('Le logo LAMAALAM est embarqué dans l\'application', (tester) async {
-    final bytes = await rootBundle.load('assets/branding/logo_lamaalam_circle_512.png');
+    final bytes = await rootBundle.load('assets/branding/logo_lamaalam_sans_telephone_512.png');
     expect(bytes.lengthInBytes, greaterThan(10000));
   });
 }

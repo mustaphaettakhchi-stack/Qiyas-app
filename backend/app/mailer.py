@@ -40,8 +40,12 @@ def send_invitation(to: str, full_name: str, organization: str, url: str, hours:
     body = (
         f"Bonjour {full_name},\n\n"
         f"{organization} vous invite à rejoindre son espace sur l'application LAMAALAM.\n\n"
-        f"Pour créer votre mot de passe, ouvrez ce lien (valable {hours} heures, utilisable une seule fois) :\n"
+        "Pour créer votre compte :\n"
+        "1. Installez l'application LAMAALAM (lien fourni par votre administrateur).\n"
+        "2. Sur l'écran de connexion, touchez « J'ai reçu un lien ».\n"
+        "3. Collez ce lien personnel, puis choisissez votre mot de passe :\n\n"
         f"{url}\n\n"
+        f"Ce lien est valable {hours} heures et ne fonctionne qu'une seule fois. Ne le transmettez à personne.\n\n"
         "Si vous n'attendiez pas cette invitation, ignorez ce message.\n"
     )
     return send_mail(to, f"Invitation — {organization}", body)

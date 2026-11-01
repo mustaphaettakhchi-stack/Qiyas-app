@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/app_state.dart';
+import '../../session/session_controller.dart';
+import 'team_screen.dart';
 import '../widgets/common.dart';
 import '../widgets/photos.dart';
 
@@ -16,12 +18,33 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    final session = context.watch<SessionController>();
+    final me = session.user;
     final c = s.company;
     void edit(VoidCallback f) => s.mutate(f);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profil de l\'entreprise'), actions: const [SyncBadge()]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
+        if (me != null)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.account_circle_outlined),
+              title: Text(me.fullName),
+              subtitle: Text([
+                me.email,
+                me.roleLabel,
+                if (session.isDemo) 'démonstration sans serveur' else if (!session.verifiedOnline) 'hors connexion',
+              ].join(' · ')),
+            ),
+          ),
+        if (me != null && me.isAdmin && !session.isDemo)
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TeamScreen())),
+            icon: const Icon(Icons.group_outlined),
+            label: const Text('Équipe et invitations'),
+          ),
+        const SizedBox(height: 8),
         Row(children: [
           Container(
             width: 72,
@@ -91,7 +114,16 @@ class ProfileScreen extends StatelessWidget {
             },
             child: const Text('Exporter mes données'),
           ),
-          TextButton(onPressed: s.signOut, child: const Text('Se déconnecter')),
+          TextButton(
+            onPressed: () async {
+              if (await confirm(context, 'Se déconnecter ?',
+                  'Les données saisies restent sur ce téléphone. Il faudra votre mot de passe et votre code pour revenir.',
+                  ok: 'Se déconnecter')) {
+                await session.logout();
+              }
+            },
+            child: const Text('Se déconnecter'),
+          ),
         ]),
       ]),
     );

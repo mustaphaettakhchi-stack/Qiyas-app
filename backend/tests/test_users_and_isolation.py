@@ -130,3 +130,47 @@ def test_promotion_to_admin(client, db):
     assert r.status_code == 200 and r.json()["roles"] == ["admin"]
     new_tokens = login(client, collab.email, secret)
     assert client.get("/api/v1/users", headers=auth(new_tokens)).status_code == 200
+
+
+def test_password_reset_by_admin(client, db):
+    org, _, admin_tokens = _admin(client, db)
+    collab, secret = make_user(db, org, Role.collaborator)
+    old_tokens = login(client, collab.email, secret)
+
+    r = client.post(f"/api/v1/users/{collab.id}/password-reset", headers=auth(admin_tokens))
+    assert r.status_code == 201, r.text
+    token = r.json()["reset_url"].split("#", 1)[1]
+    assert "/reinitialisation#" in r.json()["reset_url"]
+
+    weak = client.post("/api/v1/password-reset/accept", json={"token": token, "password": "motdepasse123"})
+    assert weak.status_code == 422
+    new_password = "Ruelle-indigo-panier-marbre-93"
+    ok = client.post("/api/v1/password-reset/accept", json={"token": token, "password": new_password})
+    assert ok.status_code == 200
+    # Lien à usage unique, anciennes sessions fermées, ancien mot de passe refusé.
+    assert client.post("/api/v1/password-reset/accept", json={"token": token, "password": new_password}).status_code == 410
+    assert client.get("/api/v1/auth/me", headers=auth(old_tokens)).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"email": collab.email, "password": STRONG_PASSWORD}).status_code == 401
+    # La double authentification reste exigée.
+    body = client.post("/api/v1/auth/login", json={"email": collab.email, "password": new_password}).json()
+    assert body["mfa_required"] and body["tokens"] is None
+
+
+def test_password_reset_is_admin_only_and_isolated(client, db):
+    org_a, _, tokens_a = _admin(client, db, "A")
+    org_b, _, _ = _admin(client, db, "B")
+    collab_a, secret = make_user(db, org_a, Role.collaborator)
+    collab_b, _ = make_user(db, org_b, Role.collaborator)
+    assert client.post(f"/api/v1/users/{collab_b.id}/password-reset", headers=auth(tokens_a)).status_code == 404
+    collab_tokens = login(client, collab_a.email, secret)
+    assert client.post(f"/api/v1/users/{collab_a.id}/password-reset", headers=auth(collab_tokens)).status_code == 403
+
+
+def test_new_reset_link_revokes_previous(client, db):
+    org, _, admin_tokens = _admin(client, db)
+    collab, _ = make_user(db, org, Role.collaborator)
+    first = client.post(f"/api/v1/users/{collab.id}/password-reset", headers=auth(admin_tokens)).json()
+    client.post(f"/api/v1/users/{collab.id}/password-reset", headers=auth(admin_tokens))
+    token = first["reset_url"].split("#", 1)[1]
+    r = client.post("/api/v1/password-reset/accept", json={"token": token, "password": "Ruelle-indigo-panier-marbre-93"})
+    assert r.status_code == 410

@@ -12,7 +12,7 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | Serveur : comptes, rôles, invitations, double authentification, journal d'audit | Fait, testé (37 tests sur PostgreSQL) |
 | Application : relevé de pièces rectangulaires, métré, grille de prix, devis PDF, partage | Hérité de Qiyas, fonctionnel, **local au téléphone** |
 | Application : charte LAMAALAM, logo, aucune donnée de démonstration | Fait |
-| Application : connexion au serveur | **Pas encore** : l'écran de connexion est celui de démonstration (code `482913`) |
+| Application : connexion au serveur, double authentification, invitation, gestion de l'équipe | Fait, testé de bout en bout contre le serveur réel |
 | Pièces non rectangulaires, synchronisation, espace client, bibliothèque, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
 
 ## Documentation
@@ -40,10 +40,19 @@ rm -f test/widget_test.dart
 flutter pub get
 flutter analyze
 flutter test
-flutter run
+flutter run --dart-define=LAMAALAM_API_URL=https://api.exemple.ma
 ```
 
-À chaque push sur `main`, GitHub Actions analyse et teste l'application, teste le serveur et construit un APK Android de test (onglet **Actions**, artefact `lamaalam-debug-apk`).
+L'adresse du serveur peut aussi être saisie sur l'écran de connexion (« Adresse du serveur ») ; seules les adresses `https://` sont acceptées hors version de développement.
+
+Test de bout en bout application ↔ serveur (efface la base indiquée) :
+
+```bash
+LAMAALAM_TEST_DATABASE_URL=postgresql+psycopg://utilisateur:motdepasse@localhost:5432/lamaalam_test \
+  PYTHON=backend/.venv/bin/python tool/integration_test.sh
+```
+
+À chaque push sur `main`, GitHub Actions analyse et teste l'application, teste le serveur et construit deux APK Android de test (onglet **Actions**, artefact `lamaalam-apk-test`) : `lamaalam-serveur.apk`, qui exige un serveur, et `lamaalam-demonstration-sans-serveur.apk`, utilisable tant qu'aucun hébergement n'est en service.
 
 Permissions iOS à ajouter dans `ios/Runner/Info.plist` :
 
@@ -83,7 +92,8 @@ Aucun compte n'existe par défaut. L'administrateur configure sa double authenti
 lib/                     application Flutter (héritée de Qiyas, refonte modulaire prévue au lot 1.0)
   domain/                modèles et calculs de métré et de devis (fonctions pures, testées)
   data/                  état, stockage local, modèles de prestations (sans prix)
-  services/              PDF, partage, connexion de démonstration, télémètre simulé
+  session/               connexion au serveur : client API, jetons (stockage sécurisé), état de session
+  services/              PDF, partage, télémètre (non branché)
   ui/                    écrans
 test/                    tests Flutter ; test/support : données de référence réservées aux tests
 backend/
@@ -99,6 +109,6 @@ docker-compose.yml       pile serveur
 
 | Fonction | État |
 | --- | --- |
-| Connexion | Code SMS fixe `482913`, à remplacer par la connexion au serveur (prochain lot) |
+| Connexion | Réelle (serveur LAMAALAM). Une version « démonstration sans serveur » n'existe que si elle est compilée avec `--dart-define=LAMAALAM_DEMO=true` ; elle l'affiche en clair |
 | Synchronisation | Aucune : l'application affiche « Sur ce téléphone » |
 | Télémètre Bluetooth | Non branché ; le bouton de mesure simulée est masqué pour ne jamais produire de cote inventée (décision D-02) |

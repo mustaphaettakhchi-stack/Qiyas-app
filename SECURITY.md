@@ -33,6 +33,9 @@ Hypothèse retenue sous réserve de la décision D-05 :
 - Comptes clients créés **uniquement par invitation** (lien à usage unique valable 72 h). Pas d'inscription libre.
 - L'application peut exiger le déverrouillage biométrique du téléphone à l'ouverture (paramètre organisation). *Le plugin nécessaire sera inscrit au registre des licences avant intégration.*
 - Le code de démonstration fixe de Qiyas (`482913`) est **supprimé** ; aucun compte par défaut n'existe en production. Le premier administrateur est créé par une commande en ligne sur le serveur.
+- Le lien d'invitation porte son jeton après un `#` : il n'est jamais transmis au serveur web ni écrit dans ses journaux ; l'utilisateur le colle dans l'application.
+- Hors connexion, un utilisateur déjà connecté conserve l'accès à ses données locales ; la session est vérifiée auprès du serveur dès le retour du réseau et l'utilisateur est déconnecté si elle a été révoquée.
+- Une version « démonstration sans serveur » ne peut exister que compilée volontairement (`LAMAALAM_DEMO=true`) ; elle n'est jamais publiée comme version de production.
 
 ## 4. Autorisations
 
@@ -62,7 +65,7 @@ Hypothèse retenue sous réserve de la décision D-05 :
 - Données dans le dossier privé de l'application ; pas d'écriture dans la galerie publique sans action explicite de l'utilisateur.
 - Jetons dans Keychain (iOS) / Keystore (Android) via `flutter_secure_storage`.
 - Chiffrement de la base SQLite locale : **À EXAMINER** (SQLCipher) ; d'ici là, la protection repose sur le chiffrement de l'appareil et le verrouillage de l'app.
-- Déconnexion à distance : la révocation de session côté serveur provoque l'effacement des données locales à la prochaine connexion réseau.
+- Déconnexion à distance : la révocation de session côté serveur déconnecte l'application au retour du réseau. **L'effacement des données locales n'est pas encore appliqué** : il le sera avec la synchronisation (lot 1.2), pour ne pas détruire des saisies non encore envoyées.
 - Journaux applicatifs sans données personnelles.
 
 ## 8. Serveur

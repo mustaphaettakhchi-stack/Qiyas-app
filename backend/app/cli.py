@@ -47,13 +47,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--organization", required=True)
     p.add_argument("--email", required=True)
     p.add_argument("--name", required=True)
+    p.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="lire le mot de passe sur l'entrée standard (scripts) au lieu de le demander",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "create-admin":
-        password = getpass.getpass("Mot de passe : ")
-        if password != getpass.getpass("Confirmez le mot de passe : "):
-            print("Les deux saisies sont différentes.", file=sys.stderr)
-            return 1
+        if args.password_stdin:
+            password = sys.stdin.readline().rstrip("\n")
+        else:
+            password = getpass.getpass("Mot de passe : ")
+            if password != getpass.getpass("Confirmez le mot de passe : "):
+                print("Les deux saisies sont différentes.", file=sys.stderr)
+                return 1
         problems = password_problems(password, [args.email, args.name, args.organization])
         if problems:
             print(problems[0], file=sys.stderr)

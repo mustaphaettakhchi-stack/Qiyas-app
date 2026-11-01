@@ -14,7 +14,7 @@ Sortie : réponses de LAMAALAM aux décisions bloquantes D-01, D-05, D-06, D-07,
 
 **État au 1er novembre 2026** :
 - Lot 1.0 *partiel* : renommage, charte et logo, retrait des données de démonstration, serveur FastAPI + PostgreSQL + Alembic, Docker Compose, CI serveur. **Reste à faire** : Riverpod, go_router, Drift, ARB, contrôle automatique des licences dans la CI.
-- Lot 1.1 *côté serveur* : comptes, rôles, invitations, 2FA TOTP, codes de secours, sessions révocables, verrouillage, journal d'audit, test d'isolation entre organisations, test qui vérifie qu'aucune route privée n'est accessible sans session (37 tests sur PostgreSQL réel). **Reste à faire** : écrans de connexion et d'administration dans l'application mobile, qui utilise encore la connexion de démonstration Qiyas.
+- Lot 1.1 *fait* : comptes, rôles, invitations, 2FA TOTP, codes de secours, sessions révocables, verrouillage, journal d'audit et lien de nouveau mot de passe créé par l'administrateur (serveur, 41 tests) ; écrans de connexion, mise en place de la 2FA, codes de secours, invitation, nouveau mot de passe, gestion de l'équipe (application) ; test de bout en bout application ↔ serveur réel. **Reste à faire** : effacement des données locales à la révocation (attend la synchronisation, lot 1.2, pour ne pas détruire de saisies non envoyées) ; envoi par e-mail du lien de nouveau mot de passe (aujourd'hui transmis par l'administrateur).
 
 Ordre de développement (chaque lot est livré testé avant le suivant) :
 

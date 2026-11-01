@@ -4,7 +4,8 @@ import 'package:provider/provider.dart';
 
 import 'data/app_state.dart';
 import 'ui/home_shell.dart';
-import 'ui/screens/login_screen.dart';
+import 'session/session_controller.dart';
+import 'ui/screens/auth/login_screen.dart';
 
 /// Charte Groupe LAMAALAM (docs/ARCHITECTURE.md §8).
 abstract final class Brand {
@@ -80,6 +81,7 @@ class LamaalamApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    final session = context.watch<SessionController>();
     return MaterialApp(
       title: 'LAMAALAM',
       debugShowCheckedModeBanner: false,
@@ -93,9 +95,9 @@ class LamaalamApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: !s.loaded
+      home: !s.loaded || !session.restored
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : (s.data.authenticated ? const HomeShell() : const LoginScreen()),
+          : (session.isAuthenticated ? const HomeShell() : const LoginScreen()),
     );
   }
 }

@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import Context, require_admin
 from ..mailer import send_invitation
-from ..models import AuthSession, Invitation, Organization, Role, User, UserRole, UserStatus
+from ..models import AuthSession, Invitation, Organization, PasswordReset, Role, User, UserRole, UserStatus
 from ..security import hash_password, hash_token, new_opaque_token, now, password_problems
 from .auth import normalize_email
 
@@ -62,6 +62,11 @@ class InvitationOut(BaseModel):
     email_sent: bool | None = None
     # Lien renvoyé une seule fois, à la création, pour transmission manuelle si l'e-mail échoue.
     invitation_url: str | None = None
+
+
+class PasswordResetOut(BaseModel):
+    expires_at: datetime
+    reset_url: str
 
 
 class AcceptIn(BaseModel):
@@ -329,3 +334,68 @@ def accept_invitation(body: AcceptIn, request: Request, db: Session = Depends(ge
           actor_id=user.id, entity_table="users", entity_id=user.id, details={"role": inv.role.value})
     db.commit()
     return {"status": "ok", "message": "Compte créé. Connectez-vous pour configurer la double authentification."}
+
+
+# ---------- mot de passe oublié ----------
+
+RESET_HOURS = 24
+
+
+@router.post("/users/{user_id}/password-reset", response_model=PasswordResetOut, status_code=status.HTTP_201_CREATED)
+def create_password_reset(
+    user_id: uuid.UUID, request: Request, ctx: Context = Depends(require_admin), db: Session = Depends(get_db)
+) -> PasswordResetOut:
+    """L'administrateur, après avoir vérifié l'identité de la personne, lui transmet ce lien.
+
+    La double authentification n'est pas désactivée : la personne devra toujours saisir son code.
+    """
+    user = _org_user(db, ctx, user_id)
+    db.execute(
+        update(PasswordReset)
+        .where(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None), PasswordReset.revoked_at.is_(None))
+        .values(revoked_at=now())
+    )
+    token = new_opaque_token()
+    reset = PasswordReset(
+        organization_id=ctx.organization_id,
+        user_id=user.id,
+        token_hash=hash_token(token),
+        created_by=ctx.user.id,
+        expires_at=now() + timedelta(hours=RESET_HOURS),
+    )
+    db.add(reset)
+    db.flush()
+    audit(db, "user.password_reset.create", request=request, organization_id=ctx.organization_id,
+          actor_id=ctx.user.id, actor_role=ctx.main_role.value, entity_table="users", entity_id=user.id)
+    db.commit()
+    url = f"{get_settings().public_base_url.rstrip('/')}/reinitialisation#{token}"
+    return PasswordResetOut(expires_at=reset.expires_at, reset_url=url)
+
+
+@router.post("/password-reset/accept", status_code=status.HTTP_200_OK)
+def accept_password_reset(body: AcceptIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    """Route publique : le jeton tient lieu d'autorisation. Toutes les sessions sont fermées."""
+    reset = db.scalar(
+        select(PasswordReset).where(PasswordReset.token_hash == hash_token(body.token)).with_for_update()
+    )
+    if reset is None or reset.used_at or reset.revoked_at or reset.expires_at <= now():
+        raise HTTPException(
+            status.HTTP_410_GONE,
+            "Ce lien n'est plus valable. Demandez un nouveau lien à votre administrateur.",
+        )
+    user = db.get(User, reset.user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status.HTTP_410_GONE, "Ce lien n'est plus valable.")
+    problems = password_problems(body.password, [user.email, user.full_name, "lamaalam"])
+    if problems:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, problems[0])
+    user.password_hash = hash_password(body.password)
+    user.password_changed_at = now()
+    user.failed_login_count = 0
+    user.locked_until = None
+    reset.used_at = now()
+    revoke_all_sessions(db, user.id, "password_reset")
+    audit(db, "user.password_reset.accept", request=request, organization_id=user.organization_id,
+          actor_id=user.id, entity_table="users", entity_id=user.id)
+    db.commit()
+    return {"status": "ok", "message": "Mot de passe modifié. Connectez-vous avec le nouveau mot de passe."}

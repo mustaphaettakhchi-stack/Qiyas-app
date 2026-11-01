@@ -68,14 +68,6 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  // ---------- compte ----------
-  void signIn(String phone) => mutate(() {
-        data.phone = phone;
-        data.authenticated = true;
-      });
-
-  void signOut() => mutate(() => data.authenticated = false);
-
   void setOnline(bool online) => mutate(() => data.online = online);
 
 

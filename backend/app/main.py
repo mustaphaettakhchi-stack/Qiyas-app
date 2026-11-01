@@ -4,6 +4,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,7 @@ PUBLIC_ROUTES = frozenset(
         ("POST", f"{API_PREFIX}/auth/mfa/verify"),
         ("POST", f"{API_PREFIX}/auth/refresh"),
         ("POST", f"{API_PREFIX}/invitations/accept"),
+        ("POST", f"{API_PREFIX}/password-reset/accept"),
     }
 )
 
@@ -34,6 +36,21 @@ health = APIRouter(tags=["exploitation"])
 def health_check(db: Session = Depends(get_db)) -> dict:
     db.execute(text("select 1"))
     return {"status": "ok"}
+
+
+INVITATION_PAGE = """<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lien LAMAALAM</title>
+<style>body{font-family:sans-serif;background:#151515;color:#fff;max-width:32rem;margin:2rem auto;padding:1rem;line-height:1.5}
+h1{color:#F28C00;font-size:1.4rem}</style></head>
+<body><h1>Lien LAMAALAM</h1>
+<p>Ce lien (invitation ou nouveau mot de passe) s'utilise dans l'application LAMAALAM, pas dans le navigateur.</p>
+<ol><li>Copiez l'adresse complète de cette page.</li>
+<li>Ouvrez l'application LAMAALAM et touchez « J'ai reçu un lien ».</li>
+<li>Collez le lien et choisissez votre mot de passe.</li></ol>
+<p>Le lien est personnel, à durée limitée et utilisable une seule fois.</p></body></html>"""
 
 
 def create_app() -> FastAPI:
@@ -55,6 +72,12 @@ def create_app() -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/invitation", response_class=HTMLResponse, include_in_schema=False)
+    @app.get("/reinitialisation", response_class=HTMLResponse, include_in_schema=False)
+    def invitation_page() -> str:
+        # Le jeton est dans le fragment (#…) : il n'est jamais transmis au serveur.
+        return INVITATION_PAGE
 
     app.include_router(health, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)

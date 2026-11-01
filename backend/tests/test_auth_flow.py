@@ -173,3 +173,11 @@ def test_no_secret_in_database(client, db):
     assert STRONG_PASSWORD not in row.password_hash
     session = db.scalar(select(AuthSession).where(AuthSession.user_id == user.id))
     assert session.refresh_token_hash != tokens["refresh_token"]
+
+
+def test_invitation_page_is_static(client):
+    r = client.get("/invitation")
+    assert r.status_code == 200
+    assert "J'ai reçu un lien" in r.text
+    assert client.get("/reinitialisation").status_code == 200
+    assert r.headers["cache-control"] == "no-store"
