@@ -486,6 +486,17 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
+class MessageRead(Base):
+    """Dernière lecture du fil d'un projet par un utilisateur (compteur de messages non lus)."""
+
+    __tablename__ = "message_reads"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class OrgCounter(Base):
     """Compteurs de numérotation par organisation (références de projets, puis devis et factures)."""
 

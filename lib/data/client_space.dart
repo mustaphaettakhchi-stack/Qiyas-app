@@ -18,7 +18,8 @@ class ClientProject {
       projectType = j['project_type'] as String? ?? '',
       address = j['site_address'] as String? ?? '',
       city = j['site_city'] as String? ?? '',
-      updatedAt = _dt(j['updated_at']);
+      updatedAt = _dt(j['updated_at']),
+      unreadMessages = j['unread_messages'] as int? ?? 0;
 
   final String id;
   final String reference;
@@ -28,6 +29,9 @@ class ClientProject {
   final String address;
   final String city;
   final DateTime updatedAt;
+
+  /// Messages de l'équipe non encore lus par le client.
+  final int unreadMessages;
 
   String get title => name.isNotEmpty ? name : (reference.isNotEmpty ? reference : 'Projet');
 }
@@ -107,6 +111,24 @@ class ProjectMessage {
   final DateTime createdAt;
 }
 
+/// Fil où un client a écrit depuis la dernière lecture (vue de l'équipe).
+class UnreadThread {
+  UnreadThread.fromJson(Map<String, dynamic> j)
+    : projectId = j['project_id'] as String,
+      projectReference = j['project_reference'] as String?,
+      projectName = j['project_name'] as String? ?? '',
+      clientName = j['client_name'] as String? ?? '',
+      unread = j['unread'] as int,
+      lastAt = _dt(j['last_at']);
+
+  final String projectId;
+  final String? projectReference;
+  final String projectName;
+  final String clientName;
+  final int unread;
+  final DateTime lastAt;
+}
+
 /// Fichier d'un projet vu par l'équipe (photos partagées ou non, PDF des devis).
 class ProjectFile {
   ProjectFile.fromJson(Map<String, dynamic> j)
@@ -151,6 +173,9 @@ class ClientSpaceApi {
 
   Future<ProjectMessage> postMessage(String projectId, String body, {required bool asClient}) async =>
       ProjectMessage.fromJson(Map<String, dynamic>.from(await api.post(_messagesPath(projectId, asClient), {'body': body}) as Map));
+
+  /// Fils des projets visibles où un client attend une réponse (équipe uniquement).
+  Future<List<UnreadThread>> unreadThreads() async => _list(await api.get('/messages/unread')).map(UnreadThread.fromJson).toList();
 
   // --- fichiers ---
 

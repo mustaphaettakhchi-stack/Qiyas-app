@@ -29,6 +29,7 @@ class ClientShareScreen extends StatefulWidget {
 
 class _ClientShareScreenState extends State<ClientShareScreen> {
   List<ProjectFile>? _files;
+  int _unread = 0;
   String? _error;
   bool _busy = false;
 
@@ -45,9 +46,11 @@ class _ClientShareScreenState extends State<ClientShareScreen> {
     if (p == null || p.serverVersion == null) return;
     try {
       final f = await _api.projectFiles(widget.projectId);
+      final unread = (await _api.unreadThreads()).where((t) => t.projectId == widget.projectId).fold(0, (n, t) => n + t.unread);
       if (mounted) {
         setState(() {
           _files = f;
+          _unread = unread;
           _error = null;
         });
       }
@@ -203,14 +206,17 @@ class _ClientShareScreenState extends State<ClientShareScreen> {
                 action: TextButton(onPressed: _load, child: const Text('Réessayer')),
               ),
             OutlinedButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => MessagesScreen(projectId: p.id, title: 'Messages · ${s.clientName(p)}', asClient: false),
-                ),
-              ),
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('Messages avec le client'),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => MessagesScreen(projectId: p.id, title: 'Messages · ${s.clientName(p)}', asClient: false),
+                  ),
+                );
+                await _load();
+              },
+              icon: Badge(isLabelVisible: _unread > 0, label: Text('$_unread'), child: const Icon(Icons.chat_bubble_outline)),
+              label: Text(_unread > 0 ? 'Messages avec le client · $_unread non lu(s)' : 'Messages avec le client'),
             ),
             SectionHeader(
               'Photos partagées',

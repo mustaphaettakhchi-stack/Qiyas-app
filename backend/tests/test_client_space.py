@@ -176,3 +176,29 @@ def test_client_invitation_rules(client, db):
     r = client.post("/api/v1/invitations", headers=h,
                     json={"email": unique_email(), "full_name": "X", "role": "collaborator", "client_id": str(foreign)})
     assert r.status_code == 422
+
+
+def test_unread_counters_on_both_sides(client, db):
+    s = _scene(client, db)
+    h, h_a, pa = s["h"], s["h_a"], s["pa"]
+    unread = lambda: client.get("/api/v1/messages/unread", headers=h).json()  # noqa: E731
+    assert unread() == []
+    client.post(f"/api/v1/client/projects/{pa}/messages", headers=h_a, json={"body": "Bonjour"})
+    client.post(f"/api/v1/client/projects/{pa}/messages", headers=h_a, json={"body": "Une question"})
+    u = unread()
+    assert [(x["project_id"], x["unread"], x["client_name"]) for x in u] == [(str(pa), 2, "Client A")]
+    # Le client ne voit pas ses propres messages comme non lus.
+    assert client.get("/api/v1/client/projects", headers=h_a).json()[0]["unread_messages"] == 0
+    # L'équipe lit le fil : plus rien de non lu pour elle.
+    client.get(f"/api/v1/projects/{pa}/messages", headers=h)
+    assert unread() == []
+    # Réponse de l'équipe : non lue pour le client jusqu'à ce qu'il ouvre le fil.
+    client.post(f"/api/v1/projects/{pa}/messages", headers=h, json={"body": "Réponse"})
+    assert client.get(f"/api/v1/client/projects/{pa}", headers=h_a).json()["unread_messages"] == 1
+    client.get(f"/api/v1/client/projects/{pa}/messages", headers=h_a)
+    assert client.get("/api/v1/client/projects", headers=h_a).json()[0]["unread_messages"] == 0
+    # Un compte client n'a pas accès au compteur de l'équipe ; une autre organisation ne voit rien.
+    assert client.get("/api/v1/messages/unread", headers=h_a).status_code == 403
+    client.post(f"/api/v1/client/projects/{pa}/messages", headers=h_a, json={"body": "Merci"})
+    _, _, h_other = _staff(client, db)
+    assert client.get("/api/v1/messages/unread", headers=h_other).json() == []

@@ -245,7 +245,12 @@ class SyncBadge extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.circle, size: 9, color: color),
           const SizedBox(width: 5),
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
+          // Largeur bornée : sur un écran de 360 points, un libellé long (« Erreur de
+          // synchronisation ») passe sur deux lignes au lieu d'écraser le titre.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 110),
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelSmall),
+          ),
         ]),
       ),
     );

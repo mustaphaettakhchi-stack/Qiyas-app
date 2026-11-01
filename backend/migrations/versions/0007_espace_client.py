@@ -58,8 +58,19 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_files_organization_id'), 'files', ['organization_id'], unique=False)
     op.create_index(op.f('ix_files_project_id'), 'files', ['project_id'], unique=False)
+    # La RLS de `clients`, forcée même pour le propriétaire, lui masque toutes les fiches :
+    # la vérification des nouvelles clés étrangères échouerait sur toute base contenant déjà
+    # un compte ou une invitation client. Elle est levée le temps du nettoyage des références
+    # orphelines et de la pose des clés, puis rétablie.
+    op.execute("ALTER TABLE clients NO FORCE ROW LEVEL SECURITY")
+    for table in ("invitations", "users"):
+        op.execute(
+            f"UPDATE {table} t SET client_id = NULL WHERE client_id IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM clients c WHERE c.id = t.client_id)"
+        )
     op.create_foreign_key('fk_invitations_client_id', 'invitations', 'clients', ['client_id'], ['id'])
     op.create_foreign_key('fk_users_client_id', 'users', 'clients', ['client_id'], ['id'])
+    op.execute("ALTER TABLE clients FORCE ROW LEVEL SECURITY")
 
     for table in ("files", "messages"):
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -74,13 +85,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     for table in ("files", "messages"):
         op.execute(f"DROP POLICY IF EXISTS {table}_organization ON {table}")
-    # WARNING: constraint name is None; this directive will fail as
-    # rendered.  Add a name, or use a naming convention; see
-    # https://alembic.sqlalchemy.org/en/latest/naming.html
     op.drop_constraint('fk_users_client_id', 'users', type_='foreignkey')
-    # WARNING: constraint name is None; this directive will fail as
-    # rendered.  Add a name, or use a naming convention; see
-    # https://alembic.sqlalchemy.org/en/latest/naming.html
     op.drop_constraint('fk_invitations_client_id', 'invitations', type_='foreignkey')
     op.drop_index(op.f('ix_files_project_id'), table_name='files')
     op.drop_index(op.f('ix_files_organization_id'), table_name='files')

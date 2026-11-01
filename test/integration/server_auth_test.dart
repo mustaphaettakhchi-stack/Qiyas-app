@@ -610,7 +610,12 @@ void main() {
 
     // 7. Messages dans les deux sens.
     await a.postMessage(project.id, 'Quand commencez-vous ?', asClient: true);
+    final waiting = await staff.unreadThreads();
+    expect(waiting.map((t) => (t.projectId, t.unread, t.clientName)), [(project.id, 1, 'Mme Alaoui')]);
+    expect((await staff.messages(project.id, asClient: false)).length, 1);
+    expect(await staff.unreadThreads(), isEmpty, reason: 'fil lu par l\'équipe');
     await staff.postMessage(project.id, 'Lundi à 9 h.', asClient: false);
+    expect((await a.projects()).single.unreadMessages, 1);
     final thread = await a.messages(project.id, asClient: true);
     expect(thread.map((m) => (m.fromClient, m.body)), [(true, 'Quand commencez-vous ?'), (false, 'Lundi à 9 h.')]);
     expect((await staff.messages(project.id, asClient: false)).length, 2);

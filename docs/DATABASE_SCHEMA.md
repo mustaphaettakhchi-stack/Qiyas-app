@@ -191,7 +191,7 @@ Contraintes : UNIQUE `(estimate_id, version_no)` ; trigger refusant toute modifi
 **notifications** — `user_id`, `kind`, `title`, `body`, `project_id` NULL, `read_at`.
 
 **messages** — `project_id`, `author_id`, `body`, `attachment_file_id` NULL, `read_by` (`uuid[]`). Fil unique par projet entre le client et l'équipe.
-*Mis en œuvre au lot 1.8 (migration 0007)* : `project_id`, `author_id`, `from_client`, `body` (2 000 caractères au plus), `created_at` ; RLS par organisation. **Écarts** : pas de pièce jointe ni de suivi de lecture (`read_by`) pour l'instant. `users.client_id` et `invitations.client_id` deviennent des clés étrangères vers `clients`.
+*Mis en œuvre au lot 1.8 (migration 0007)* : `project_id`, `author_id`, `from_client`, `body` (2 000 caractères au plus), `created_at` ; RLS par organisation. **Écarts** : pas de pièce jointe ; le suivi de lecture est une table `message_reads` (`user_id`, `project_id`, `read_at`, RLS ; migration 0008) au lieu d'un tableau `read_by`, pour un compteur de non-lus par utilisateur et par fil. `users.client_id` et `invitations.client_id` deviennent des clés étrangères vers `clients`.
 
 **audit_logs** — `occurred_at`, `actor_id` NULL, `actor_role`, `action` (ex. `estimate.validate`, `user.role.change`, `file.download`, `data.export`, `data.erase`), `entity_table`, `entity_id`, `project_id` NULL, `ip`, `details` (`jsonb`, sans donnée sensible en clair).
 Insertion seule : le rôle applicatif PostgreSQL n'a ni `UPDATE` ni `DELETE` sur cette table. Partitionnement mensuel par `occurred_at`. Pas de `version`, `deleted_at`, ni `updated_*`.

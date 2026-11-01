@@ -102,14 +102,21 @@ class _ClientProjectScreenState extends State<ClientProjectScreen> {
       floatingActionButton: d == null
           ? null
           : FloatingActionButton.extended(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => MessagesScreen(projectId: widget.projectId, title: 'Messages · ${d.project.title}', asClient: true),
-                ),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => MessagesScreen(projectId: widget.projectId, title: 'Messages · ${d.project.title}', asClient: true),
+                  ),
+                );
+                await _load(); // le fil vient d'être lu : compteur à jour
+              },
+              icon: Badge(
+                isLabelVisible: d.project.unreadMessages > 0,
+                label: Text('${d.project.unreadMessages}'),
+                child: const Icon(Icons.chat_bubble_outline),
               ),
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('Messages'),
+              label: Text(d.project.unreadMessages > 0 ? 'Messages · ${d.project.unreadMessages} non lu(s)' : 'Messages'),
             ),
       body: _error != null && d == null
           ? Padding(

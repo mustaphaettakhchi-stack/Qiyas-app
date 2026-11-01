@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/format.dart';
 import '../../core/labels.dart';
 import '../../data/app_state.dart';
+import '../../data/client_space.dart';
 import '../../domain/dashboard.dart';
 import '../../domain/models.dart';
 import '../../session/api_client.dart';
@@ -12,6 +13,7 @@ import '../../sync/sync_engine.dart';
 import '../widgets/brand.dart';
 import '../widgets/common.dart';
 import 'clients_screen.dart';
+import 'messages_screen.dart';
 import 'project_screen.dart';
 import 'quote_screen.dart';
 import 'sync_screen.dart';
@@ -106,6 +108,8 @@ class DashboardScreen extends StatelessWidget {
       body: RefreshIndicator(
         onRefresh: () => context.read<SyncEngine>().syncNow(),
         child: ListView(padding: const EdgeInsets.all(16), children: [
+          // En tête : un client qui attend une réponse passe avant les indicateurs.
+          const _ClientMessages(),
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -195,6 +199,79 @@ class _Kpi extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+/// Fils où un client attend une réponse. Relus à chaque synchronisation (dont le
+/// geste « tirer pour actualiser ») et au retour du fil ; rien n'apparaît hors connexion.
+class _ClientMessages extends StatefulWidget {
+  const _ClientMessages();
+
+  @override
+  State<_ClientMessages> createState() => _ClientMessagesState();
+}
+
+class _ClientMessagesState extends State<_ClientMessages> {
+  List<UnreadThread> _threads = const [];
+  DateTime? _loadedFor;
+  bool _started = false;
+  bool _loading = false;
+
+  Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
+    try {
+      final t = await ClientSpaceApi(context.read<SessionController>().api).unreadThreads();
+      if (mounted) setState(() => _threads = t);
+    } on ApiException {
+      // Hors connexion ou serveur indisponible : la section reste telle quelle.
+    } finally {
+      _loading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<SessionController>();
+    final lastSync = context.select<AppState, DateTime?>((s) => s.data.lastSyncAt);
+    if (session.isDemo || !session.verifiedOnline) return const SizedBox.shrink();
+    // Première lecture, puis une nouvelle après chaque synchronisation.
+    if (!_started || _loadedFor != lastSync) {
+      _started = true;
+      _loadedFor = lastSync;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+    if (_threads.isEmpty) return const SizedBox.shrink();
+    final total = _threads.fold(0, (n, t) => n + t.unread);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader('Messages de clients · $total'),
+        for (final t in _threads)
+          Card(
+            child: ListTile(
+              leading: Badge(label: Text('${t.unread}'), child: const Icon(Icons.chat_bubble_outline)),
+              title: Text(t.clientName.isEmpty ? 'Client' : t.clientName),
+              subtitle: Text(
+                [t.projectReference ?? t.projectName, 'dernier message le ${frDateTime(t.lastAt)}'].where((x) => x.isNotEmpty).join(' · '),
+              ),
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => MessagesScreen(
+                      projectId: t.projectId,
+                      title: 'Messages · ${t.clientName.isEmpty ? 'Client' : t.clientName}',
+                      asClient: false,
+                    ),
+                  ),
+                );
+                await _load();
+              },
+            ),
+          ),
+      ],
     );
   }
 }

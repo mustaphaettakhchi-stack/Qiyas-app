@@ -45,6 +45,7 @@ const _project = {
   'site_address': '12 rue des Oliviers',
   'site_city': 'Tanger',
   'updated_at': '2026-11-02T08:00:00Z',
+  'unread_messages': 2,
 };
 
 final _detail = {
@@ -84,6 +85,16 @@ Future<(SessionController, FakeAdapter, Widget)> _app(List<String> roles) async 
       ('POST', '/auth/refresh') => (200, {'access_token': 'a1', 'refresh_token': 'r1'}),
       ('GET', '/auth/me') => (200, _profile(roles)),
       ('GET', '/client/projects') => (200, [_project]),
+      ('GET', '/messages/unread') => (200, [
+          {
+            'project_id': _pid,
+            'project_reference': 'PR-2026-0007',
+            'project_name': 'Villa Malabata',
+            'client_name': 'Mme Alaoui',
+            'unread': 3,
+            'last_at': '2026-11-02T10:00:00Z',
+          },
+        ]),
       ('GET', '/client/projects/$_pid') => (200, _detail),
       ('GET', '/client/projects/$_pid/messages') => (200, messages),
       ('POST', '/client/projects/$_pid/messages') => (
@@ -144,6 +155,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('12 000,00 MAD TTC'), findsOneWidget);
     expect(find.textContaining('En attente de votre réponse'), findsOneWidget);
+    expect(find.text('Messages · 2 non lu(s)'), findsOneWidget);
     expect(find.textContaining('Devis envoyé · DV-2026-0012'), findsOneWidget);
     expect(find.textContaining('Aucune photo partagée'), findsOneWidget);
     expect(find.textContaining('signature électronique'), findsOneWidget);
@@ -151,7 +163,7 @@ void main() {
       expect(find.textContaining(hidden), findsNothing);
     }
 
-    await tester.tap(find.text('Messages'));
+    await tester.tap(find.text('Messages · 2 non lu(s)'));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await tester.pumpAndSettle();
     expect(find.textContaining('Aucun message'), findsOneWidget);
@@ -166,11 +178,20 @@ void main() {
 
   testWidgets('Compte de l\'équipe : application complète', (tester) async {
     late Widget app;
-    await tester.runAsync(() async => (_, _, app) = await _app(['collaborator']));
+    late FakeAdapter http;
+    await tester.runAsync(() async => (_, http, app) = await _app(['collaborator']));
     await tester.pumpWidget(app);
     await tester.pump();
     expect(find.byType(ClientHomeScreen), findsNothing);
     expect(find.text('Bibliothèque'), findsOneWidget);
+    // Accueil : le client qui attend une réponse apparaît en tête.
+    for (var i = 0; i < 3; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Messages de clients · 3'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Mme Alaoui'), findsOneWidget);
+    expect(http.requests.where((r) => r.path.endsWith('/messages/unread')), isNotEmpty);
     // Laisse s'éteindre les minuteries de l'interface (indicateurs, synchronisation différée).
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 10));

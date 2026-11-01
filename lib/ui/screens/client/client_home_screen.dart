@@ -108,13 +108,21 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
                         'mis à jour le ${frDate(p.updatedAt)}',
                       ].where((x) => x.isNotEmpty).join(' · '),
                     ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => ClientProjectScreen(projectId: p.id, title: p.title),
-                      ),
-                    ),
+                    trailing: p.unreadMessages > 0
+                        ? Badge(
+                            label: Text('${p.unreadMessages}'),
+                            child: const Icon(Icons.chat_bubble_outline, semanticLabel: 'Nouveaux messages'),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => ClientProjectScreen(projectId: p.id, title: p.title),
+                        ),
+                      );
+                      await _load();
+                    },
                   ),
                 ),
           ],
