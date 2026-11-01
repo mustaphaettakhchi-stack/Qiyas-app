@@ -1,5 +1,7 @@
 # Qiyas – application Flutter (MVP)
 
+> **LAMAALAM — Phase 0 (1er novembre 2026)** : ce dépôt est proposé comme base de l'application LAMAALAM de Groupe LAMAALAM. Les livrables d'audit et de conception sont dans [`docs/PHASE0_DECISIONS.md`](docs/PHASE0_DECISIONS.md) (point d'entrée), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md), [`docs/USER_FLOWS.md`](docs/USER_FLOWS.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`SECURITY.md`](SECURITY.md) et [`OPEN_SOURCE_LICENSE_REGISTER.md`](OPEN_SOURCE_LICENSE_REGISTER.md). Le code ci-dessous est l'état Qiyas existant, non encore modifié.
+
 Qiyas transforme une visite de chantier en **plan coté, métré automatique et devis en dirhams**, prêt à envoyer par WhatsApp. Cible : artisans et petites entreprises de rénovation au Maroc.
 
 Ce dépôt implémente les 10 écrans du cahier des charges du MVP, en version **« local d'abord »** : toutes les données restent sur le téléphone, et les services externes (SMS, synchronisation, télémètre) sont branchés derrière des interfaces, avec une implémentation de démonstration.
