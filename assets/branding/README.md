@@ -1,16 +1,20 @@
 # Identité visuelle — fichiers du logo
 
+Logo de référence désigné par Groupe LAMAALAM le 1er novembre 2026 (remplace la maquette 3D transmise plus tôt le même jour, retirée du dépôt et conservée dans l'historique Git).
+
 | Fichier | Rôle | Origine |
 | --- | --- | --- |
-| `logo_lamaalam_original.png` | **Fichier de référence fourni par Groupe LAMAALAM le 1er novembre 2026.** Ne jamais le modifier. | Transmis par LAMAALAM. 1254 × 1254 px, PNG RVB sans transparence. SHA-256 `85406f7c145539f6c93fe2d10c220bd019bf983c6b8be3942e90f75675eafb1b` |
-| `logo_lamaalam_circle.png` | Variante d'affichage sur fond sombre | Recadrage du fichier original sur le disque du logo (centre 616,5 / 589,5 px, rayon 519 px) ; l'extérieur du disque est rendu transparent. Aucun pixel du logo n'est redessiné ni recoloré. |
-| `logo_lamaalam_circle_512.png`, `logo_lamaalam_circle_192.png` | Mêmes variantes réduites (application, futures icônes) | Réduction Lanczos de la variante précédente |
+| `logo_lamaalam_original.jpg` | **Fichier de référence, octets identiques au fichier transmis.** Ne jamais le modifier. | 536 × 578 px, JPEG. SHA-256 `3ee094c9e26797088887e41071272c55aebf432e081bc5369565057f095eb6e9`. Métadonnées : appareil Android, 24/10/2026, aucune géolocalisation. |
+| `logo_lamaalam_original.png` | Même image au nom imposé par le cahier des charges | Pixels décodés du JPEG enregistrés en PNG (sans perte, sans métadonnées) |
+| `logo_lamaalam_sans_telephone.png` | Variante d'usage : **numéro de téléphone retiré à la demande de LAMAALAM** | Lignes 10 à 490 du fichier original (le numéro occupe les lignes 495 à 535), centrées sur un carré de 536 px complété avec la couleur de fond d'origine (gris #EFEFEF). Rien n'est redessiné ni recoloré. |
+| `logo_lamaalam_sans_telephone_512.png` | Même variante en 512 px, embarquée dans l'application | Réduction Lanczos |
 
-Seule la variante 512 px est embarquée dans l'application (`pubspec.yaml`), pour limiter le poids.
+Le logo garde son fond gris clair : dans l'application (fond noir), il est affiché sur une tuile aux coins arrondis plutôt que détouré, car un détourage automatique d'un JPEG altérerait les contours des lettres.
 
 ## Réserves à lever par Groupe LAMAALAM
 
-1. **C'est une maquette en relief, pas un fichier de logo.** Le fichier fourni représente le logo en 3D (ombres, reflets, fond gris dégradé). Il ne peut pas être utilisé proprement en petite taille (icône d'application), sur un fond coloré, ni en impression nette sur le devis PDF. Il faut le **fichier source à plat** (vectoriel SVG, PDF ou AI, ou PNG à fond transparent).
-2. **Le numéro de téléphone fait partie du logo.** Illisible en dessous d'environ 300 px, et il faudra changer le logo si le numéro change. Une version sans numéro est recommandée pour l'icône et l'en-tête de l'application.
-3. **« group lamaalam » ou « Groupe LAMAALAM » ?** Le logo écrit « group » (anglais), le cahier des charges écrit « Groupe ». La raison sociale exacte doit être confirmée : elle apparaîtra sur les devis.
-4. **Droits.** Confirmer qui a créé ce logo et que Groupe LAMAALAM en détient les droits d'exploitation. S'il a été produit avec un outil de génération d'images, vérifier les conditions de cet outil. Un dépôt de marque auprès de l'OMPIC protégerait le nom et le logo.
+1. **Orthographe : le logo écrit « group lamaalm »**, sans le deuxième « a » de « lamaalam ». La maquette 3D précédente écrivait « group lamaalam », et le cahier des charges « Groupe LAMAALAM ». Le cahier des charges interdit de modifier le logo : je l'utilise tel quel, mais si c'est une faute, elle apparaîtra sur l'application et sur chaque devis. **À confirmer avant toute diffusion.**
+2. **Résolution insuffisante pour l'impression.** 536 px de large en JPEG compressé (artefacts visibles autour des lettres) : correct à l'écran, flou sur un devis imprimé en A4. Il faut le fichier source (vectoriel SVG, PDF ou AI, ou PNG d'au moins 2 000 px).
+3. **Couleur.** L'orange du logo mesure environ #F88000, légèrement différent de l'orange de la charte #F28C00. Écart faible à l'écran ; à harmoniser dans le fichier source si possible.
+4. **« group » ou « Groupe » ?** La raison sociale exacte, qui figurera sur les devis, reste à confirmer.
+5. **Droits** : confirmer que Groupe LAMAALAM détient les droits d'exploitation de ce logo.
