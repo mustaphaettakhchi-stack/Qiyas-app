@@ -11,6 +11,7 @@ import 'package:lamaalam/session/session_store.dart';
 import 'package:lamaalam/sync/sync_engine.dart';
 import 'package:lamaalam/ui/home_shell.dart';
 import 'package:lamaalam/ui/screens/clients_screen.dart';
+import 'package:lamaalam/ui/screens/dashboard_screen.dart';
 import 'package:lamaalam/ui/screens/library_screen.dart';
 import 'package:lamaalam/ui/screens/metre_screen.dart';
 import 'package:lamaalam/ui/screens/plan_screen.dart';
@@ -214,5 +215,24 @@ void main() {
     expect(find.textContaining('€'), findsWidgets);
     await tester.scrollUntilVisible(find.text('Valider le devis'), 300, scrollable: find.byType(Scrollable).first);
     expect(find.text('Valider le devis'), findsOneWidget);
+  });
+
+  testWidgets('Tableau de bord rempli : indicateurs, raccourcis, à faire', (tester) async {
+    final (state, wrap) = await _setup();
+    final c = state.createClient(name: 'Mme Alaoui Benjelloun El Idrissi');
+    final p = state.createProject(clientId: c.id);
+    state.mutate(() => p
+      ..status = 'estimating'
+      ..visitDate = DateTime.now(), touch: p, meta: true);
+    final q = state.createQuote(p);
+    state.addFreeLine(p, q);
+    await tester.pumpWidget(wrap(const DashboardScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('Prospects'), findsOneWidget);
+    expect(find.text('Nouveau projet'), findsOneWidget);
+    expect(find.text('Nouveau devis'), findsOneWidget);
+    expect(find.textContaining('scan'), findsNothing); // pas de bouton sans action réelle (phase 2)
+    await tester.scrollUntilVisible(find.textContaining('Visite aujourd\'hui'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('Visite aujourd\'hui'), findsOneWidget);
   });
 }

@@ -453,10 +453,22 @@ class AppState extends ChangeNotifier {
           ..status = QuoteStatus.validated;
       });
 
+  /// Fait avancer le statut du projet (jamais en arrière) : utile au tableau de bord.
+  void _advanceProject(Project p, String status) {
+    const order = ['prospect', 'visit_planned', 'estimating', 'estimate_sent', 'won', 'in_progress', 'delivered'];
+    final from = order.indexOf(p.status), to = order.indexOf(status);
+    if (from >= 0 && to > from) {
+      p
+        ..status = status
+        ..markEdited();
+    }
+  }
+
   void markSent(Project p, Quote q) => editQuote(p, q, () {
         q
           ..status = QuoteStatus.sent
           ..sentAt = DateTime.now();
+        _advanceProject(p, 'estimate_sent');
       });
 
   void decide(Project p, Quote q, {required bool accepted, String note = ''}) => editQuote(p, q, () {
@@ -464,6 +476,7 @@ class AppState extends ChangeNotifier {
           ..status = accepted ? QuoteStatus.accepted : QuoteStatus.refused
           ..decidedAt = DateTime.now()
           ..decisionNote = note;
+        if (accepted) _advanceProject(p, 'won');
       });
 
   /// Suppression d'un brouillon jamais envoyé au serveur.

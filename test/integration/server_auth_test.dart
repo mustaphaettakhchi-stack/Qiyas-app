@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lamaalam/data/app_state.dart';
 import 'package:lamaalam/data/local_store.dart';
 import 'package:lamaalam/domain/calculations.dart';
+import 'package:lamaalam/domain/dashboard.dart';
 import 'package:lamaalam/domain/metre.dart';
 import 'package:lamaalam/domain/models.dart';
 import 'package:lamaalam/session/api_client.dart';
@@ -480,5 +481,22 @@ void main() {
     await adminSync.syncNow();
     expect(q2.status, QuoteStatus.superseded);
     expect(v2.number, '${q2.number}-v2');
+
+    // 6. Tableau de bord : les indicateurs du téléphone sont ceux du serveur, une fois arbitré
+    //    le conflit laissé par la modification forcée du collaborateur (étape 3).
+    await collabSync.syncNow();
+    expect(collab.data.conflicts.map((c) => c.id), contains(quote.id));
+    for (final c in List.of(collab.data.conflicts)) {
+      collabSync.keepServer(c);
+    }
+    await collabSync.syncNow();
+    expect(quote.status, QuoteStatus.accepted);
+    for (final (state, session) in [(admin, adminSession), (collab, collabSession)]) {
+      final server = Map<String, dynamic>.from(await session.api.get('/dashboard') as Map);
+      expect(dashboardStats(state.data).toServerShape(), server, reason: session.user!.roles.join());
+    }
+    expect(adminProject.status, 'won', reason: 'le devis accepté fait passer le projet en « accepté »');
+    final activity = await adminSession.api.get('/dashboard/activity') as List;
+    expect(activity.map((a) => (a as Map)['action']), contains('estimate.accept'));
   }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
 }

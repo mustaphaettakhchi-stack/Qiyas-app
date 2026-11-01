@@ -18,7 +18,8 @@ Ce dépôt remplace l'ancien MVP « Qiyas » (décision D-01).
 | Métré par lot et par pièce, éléments comptés, perte affichée, validation du métré | Fait, testé (unitaires et bout en bout) |
 | Bibliothèque partagée (ouvrages, matériaux, fournisseurs), historique des prix, import CSV | Fait, testé ; démarre vide |
 | Devis : versions, validation, numérotation serveur, TVA par taux, MAD/EUR, prix calculés, PDF Unicode | Fait, testé ; mentions légales à valider par l'expert-comptable |
-| Photos synchronisées, espace client, tableau de bord | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
+| Tableau de bord (indicateurs, à faire, dernières opérations) | Fait, testé (indicateurs identiques à ceux du serveur) |
+| Photos synchronisées, espace client | À faire (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)) |
 
 ## Documentation
 
